@@ -54,7 +54,6 @@
 	- [Sentinel による制御](#sentinel-による制御)
 7. [Terraform 連携](#terraform-連携)
 	- [動的クレデンシャルによる apply](#動的クレデンシャルによる-apply)
-	- [ephemeral リソースで state にシークレットを残さない](#ephemeral-リソースで-state-にシークレットを残さない)
 8. [Day2 運用](#day2-運用)
 	- [バックアップ (スナップショットの取得)](#バックアップ-スナップショットの取得)
 	- [リストア (スナップショットからの復元)](#リストア-スナップショットからの復元)
@@ -1604,7 +1603,7 @@ Sentinel を使うと、このように Policy (ACL) だけでは表現しきれ
 
 ## Terraform 連携
 
-ここまで Vault を CLI や API から使ってきましたが、インフラをコードで管理する Terraform と組み合わせると、Vault の価値はさらに高まります。ここでは Terraform から Vault の動的クレデンシャルを使って AWS に`apply`する方法と、Terraform 1.10 以降の **ephemeral** リソースを使ってシークレットを state に残さずに利用する方法を扱います。
+ここまで Vault を CLI や API から使ってきましたが、インフラをコードで管理する Terraform と組み合わせると、Vault の価値はさらに高まります。ここでは Terraform から Vault の動的クレデンシャルを使って AWS に`apply`する方法を扱います。
 
 ### Terraform のインストール
 
@@ -1682,13 +1681,13 @@ data.vault_aws_access_credentials.creds: Reading...
 data.vault_aws_access_credentials.creds: Read complete after 1s [id=...]
 ...
 aws_subnet.handson: Creating...
-aws_subnet.handson: Creation complete after 1s [id=subnet-051fbd108f81654ea]
+aws_subnet.handson: Creation complete after 1s [id=subnet-06e2c7b51aa5d93ca]
 
 Apply complete! Resources: 1 added, 0 changed, 0 destroyed.
 
 Outputs:
 
-subnet_id = "subnet-051fbd108f81654ea"
+subnet_id = "subnet-06e2c7b51aa5d93ca"
 ```
 
 実行の裏側では、[AWS Secret Engine](#aws-secret-engine) の章で見たのと同じように、Vault が `handson-assume-role` を AssumeRole した STS の一時クレデンシャルが払い出され、そのクレデンシャルでサブネットが作成されます。リースが切れるとクレデンシャルは自動的に失効します。これにより、Terraform の実行ごとにユニークで短命なクレデンシャルが使われ、長期間有効なキーを一切保持する必要がなくなります。
@@ -1697,55 +1696,8 @@ subnet_id = "subnet-051fbd108f81654ea"
 
 > HCP Terraform / Terraform Enterprise では、ワークスペースと Vault の間に信頼関係を結び、ワークロードアイデンティティで Vault を認証する **Vault-backed dynamic credentials** が利用できます。この場合`VAULT_TOKEN`すら保持する必要がなくなります。
 
-### ephemeral リソースで state にシークレットを残さない
-
-動的クレデンシャルで AWS 認証そのものは安全になりましたが、もう一つの課題が **Terraform の state ファイル** です。従来の`data`ソースで Vault からシークレットを読むと、その値が state ファイルに平文で書き込まれてしまいます。state を安全に扱っていても、シークレットが複数箇所に散らばるのは好ましくありません。
-
-これを解決するのが Terraform 1.10 で導入された **ephemeral** (エフェメラル) な仕組みです。ephemeral リソースは実行中のみメモリ上に存在し、その値は plan や state のどちらにも保存されません。Vault プロバイダは`vault_kv_secret_v2`などの ephemeral リソースを提供しています。
-
-```hcl
-terraform {
-  required_version = ">= 1.10.0"
-}
-
-# ephemeral: 読み出した値は state にも plan にも残らない
-ephemeral "vault_kv_secret_v2" "db" {
-  mount = "kv"
-  name  = "iam"
-}
-```
-
-ephemeral リソースの値は、同じく state に残らない **write-only** 引数にのみ渡せます。例えば RDS のパスワードを設定する例は以下のようになります。
-
-```hcl
-resource "aws_db_instance" "app" {
-  # ... 省略 ...
-  username = "admin"
-
-  # write-only 引数: state に保存されない
-  password_wo         = ephemeral.vault_kv_secret_v2.db.data["password"]
-  password_wo_version = 1
-}
-```
-
-`password_wo`は書き込み専用の引数で、Terraform は値を適用はしますが state には記録しません。`password_wo_version`を変更したときだけ再適用されます。
-
-```console
-$ terraform apply -auto-approve
-ephemeral.vault_kv_secret_v2.db: Opening...
-ephemeral.vault_kv_secret_v2.db: Opening complete after 1s
-...
-Apply complete! Resources: 1 added, 0 changed, 0 destroyed.
-
-$ terraform show -json | jq '.values.root_module.resources[].values.password_wo'
-null
-```
-
-`terraform show`で state を覗いてもパスワードは`null`で、値がどこにも永続化されていないことがわかります。動的クレデンシャルで「認証」を、ephemeral で「シークレットの受け渡し」を、それぞれ state に残さず安全に扱えるようになります。
-
 ### 参考リンク
 * [Vault Provider: vault_aws_access_credentials](https://registry.terraform.io/providers/hashicorp/vault/latest/docs/data-sources/aws_access_credentials)
-* [Ephemeral values in Terraform](https://www.hashicorp.com/blog/ephemeral-values-in-terraform)
 * [Vault-backed dynamic credentials in HCP Terraform](https://developer.hashicorp.com/terraform/cloud-docs/dynamic-provider-credentials/vault-backed)
 
 ---
