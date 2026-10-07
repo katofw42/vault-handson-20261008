@@ -58,17 +58,10 @@
 8. [Day2 運用](#day2-運用)
 	- [バックアップ (スナップショットの取得)](#バックアップ-スナップショットの取得)
 	- [リストア (スナップショットからの復元)](#リストア-スナップショットからの復元)
-
-## 目次
-
-- [Vault セットアップ](#vault-セットアップ)
-- [Vault への AWS 権限付与](#vault-への-aws-権限付与)
-- [アプリからの利用 (Auth Method)](#アプリからの利用-auth-method)
-- [Static Secret Engine](#static-secret-engine)
-- [AWS Secret Engine](#aws-secret-engine)
-- [テナントと権限設計](#テナントと権限設計)
-- [Terraform 連携](#terraform-連携)
-- [Day2 運用](#day2-運用)
+9. [クリーンアップ (削除手順)](#クリーンアップ-削除手順)
+	- [Vault 側の後片付け](#vault-側の後片付け)
+	- [AWS 側の後片付け](#aws-側の後片付け)
+	- [環境 (EC2 / Vault 本体) の削除](#環境-ec2--vault-本体-の削除)
 
 ---
 
@@ -1503,17 +1496,39 @@ Sentinel を使うと、このように Policy (ACL) だけでは表現しきれ
 
 ここまで Vault を CLI や API から使ってきましたが、インフラをコードで管理する Terraform と組み合わせると、Vault の価値はさらに高まります。ここでは Terraform から Vault の動的クレデンシャルを使って AWS に`apply`する方法と、Terraform 1.10 以降の **ephemeral** リソースを使ってシークレットを state に残さずに利用する方法を扱います。
 
+### Terraform のインストール
+
+Terraform も HashiCorp の公式リポジトリから`dnf`でインストールできます ([Vault セットアップ](#vault-セットアップ) でリポジトリを追加済みなら、追加手順は不要です)。
+
+```console
+$ sudo dnf install -y dnf-plugins-core
+$ sudo dnf config-manager --add-repo https://rpm.releases.hashicorp.com/AmazonLinux/hashicorp.repo
+$ sudo dnf install -y terraform
+
+$ terraform version
+Terraform v1.16.5
+on linux_arm64
+```
+
 ### 動的クレデンシャルによる apply
 
-Terraform で AWS にリソースを作る際、通常は長期間有効なアクセスキーを環境変数や`provider`ブロックに書きます。これはキーの管理と漏洩リスクという課題を抱えています。そこで、[AWS Secret Engine](#aws-secret-engine) で設定した動的クレデンシャルを Terraform から読み出し、その短命なキーで AWS プロバイダを認証させます。
+Terraform で AWS にリソースを作る際、通常は長期間有効なアクセスキーを環境変数や`provider`ブロックに書きます。これはキーの管理と漏洩リスクという課題を抱えています。そこで、[AWS Secret Engine](#aws-secret-engine) で設定した動的クレデンシャル (`subnet-role`) を Terraform から読み出し、その短命なクレデンシャルで AWS プロバイダを認証させます。ここでは [Vault への AWS 権限付与](#vault-への-aws-権限付与) で用意した権限の範囲で、**事前作成済みの VPC にサブネットを 1 つ作成** してみます。
 
-まず Vault プロバイダと AWS プロバイダを定義します。Vault プロバイダは`VAULT_ADDR`と`VAULT_TOKEN`環境変数を参照します。
+作業用ディレクトリに`main.tf`を作成します。`<VPC_ID>` はサブネットを作成する既存 VPC の ID に置き換えてください。`cidr_block` は対象 VPC の CIDR 範囲内の空きレンジにしてください。
 
 ```hcl
+terraform {
+  required_version = ">= 1.10.0"
+  required_providers {
+    vault = { source = "hashicorp/vault" }
+    aws   = { source = "hashicorp/aws" }
+  }
+}
+
 provider "vault" {}
 
-# AWS Secret Engine からクレデンシャルを動的に発行する
-# AWS Secret Engine の章で作成した assumed_role タイプのロール (subnet-role) を利用する
+# AWS Secret Engine の assumed_role ロール (subnet-role) から
+# STS の一時クレデンシャルを動的に発行する
 data "vault_aws_access_credentials" "creds" {
   backend = "aws"
   role    = "subnet-role"
@@ -1528,23 +1543,47 @@ provider "aws" {
   secret_key = data.vault_aws_access_credentials.creds.secret_key
   token      = data.vault_aws_access_credentials.creds.security_token
 }
+
+# 事前作成済みの VPC にサブネットを作成する
+resource "aws_subnet" "handson" {
+  vpc_id            = "<VPC_ID>"
+  cidr_block        = "10.0.110.0/24"
+  availability_zone = "ap-northeast-1a"
+  tags = { Name = "vault-handson-subnet" }
+}
+
+output "subnet_id" {
+  value = aws_subnet.handson.id
+}
 ```
 
-この状態で`apply`を実行すると、Terraform はまず Vault から対象ロールを AssumeRole した一時クレデンシャルを 1 セット発行し、そのクレデンシャルを使って AWS にリソースを作成します。
+`VAULT_ADDR` と `VAULT_TOKEN` を設定して`init`→`apply`します。
 
 ```console
 $ export VAULT_ADDR="http://127.0.0.1:8200"
 $ export VAULT_TOKEN=$(vault print token)
 
 $ terraform init
+...
+Terraform has been successfully initialized!
+
 $ terraform apply -auto-approve
 data.vault_aws_access_credentials.creds: Reading...
-data.vault_aws_access_credentials.creds: Read complete after 6s
+data.vault_aws_access_credentials.creds: Read complete after 1s [id=...]
+...
+aws_subnet.handson: Creating...
+aws_subnet.handson: Creation complete after 1s [id=subnet-051fbd108f81654ea]
 
 Apply complete! Resources: 1 added, 0 changed, 0 destroyed.
+
+Outputs:
+
+subnet_id = "subnet-051fbd108f81654ea"
 ```
 
-実行の裏側では、[AWS Secret Engine](#aws-secret-engine) の章で見たのと同じように、Vault が対象ロールを AssumeRole した STS の一時クレデンシャルが払い出され、`apply`が終わってリースが切れると自動的に失効します。これにより、Terraform の実行ごとにユニークで短命なクレデンシャルが使われ、長期間有効なキーを一切保持する必要がなくなります。
+実行の裏側では、[AWS Secret Engine](#aws-secret-engine) の章で見たのと同じように、Vault が `handson-assume-role` を AssumeRole した STS の一時クレデンシャルが払い出され、そのクレデンシャルでサブネットが作成されます。リースが切れるとクレデンシャルは自動的に失効します。これにより、Terraform の実行ごとにユニークで短命なクレデンシャルが使われ、長期間有効なキーを一切保持する必要がなくなります。
+
+> **`terraform destroy` について:** 本ハンズオンの `handson-assume-role` は `ec2:CreateSubnet` など「作成系」の権限しか持たないため、このクレデンシャルでは `terraform destroy` (サブネット削除) は `UnauthorizedOperation` で失敗します。これは「払い出す権限を必要最小限に絞る」設計の表れです。作成したサブネットの削除は、[クリーンアップ (削除手順)](#クリーンアップ-削除手順) を参照し、削除権限を持つ管理者クレデンシャルで行ってください。
 
 > HCP Terraform / Terraform Enterprise では、ワークスペースと Vault の間に信頼関係を結び、ワークロードアイデンティティで Vault を認証する **Vault-backed dynamic credentials** が利用できます。この場合`VAULT_TOKEN`すら保持する必要がなくなります。
 
@@ -1614,7 +1653,7 @@ $ export VAULT_ADDR="http://127.0.0.1:8200"
 $ vault operator raft snapshot save vault-$(date +%Y%m%d).snap
 
 $ ls -lh vault-*.snap
--rw-------  1 user  staff   1.2M 10  7 11:30 vault-20261007.snap
+-rw-------. 1 ec2-user ec2-user 534K Oct  7 17:31 vault-20261007.snap
 ```
 
 スナップショットの取得にはクラスタ全体を読み出す権限が必要なため、専用のポリシーを用意してトークンを割り当てるのが一般的です。
@@ -1649,11 +1688,23 @@ Sealed          false
 ...
 
 $ vault kv get kv/iam
+== Secret Path ==
+kv/data/iam
+
+======= Metadata =======
+Key                Value
+---                -----
+created_time       2026-10-07T17:09:28.123943402Z
+custom_metadata    <nil>
+deletion_time      n/a
+destroyed          false
+version            6
+
 ====== Data ======
 Key         Value
 ---         -----
-name        kabu-2
-password    passwd-2
+name        kabu
+password    passwd
 ```
 
 取得時点のデータが復元されていることが確認できれば完了です。バックアップは「取得できること」だけでなく「正しくリストアできること」までを定期的に検証して初めて意味を持ちます。半期に一度など、リストアのリハーサルを運用手順に組み込んでおきましょう。
@@ -1662,3 +1713,95 @@ password    passwd-2
 * [vault operator raft snapshot](https://developer.hashicorp.com/vault/docs/commands/operator/raft)
 * [Integrated Storage](https://developer.hashicorp.com/vault/docs/concepts/integrated-storage)
 * [Automated Integrated Storage Snapshots](https://developer.hashicorp.com/vault/docs/enterprise/automated-integrated-storage-snapshots)
+
+---
+
+## クリーンアップ (削除手順)
+
+ハンズオンで作成したリソースをまとめて削除します。課金や権限の残存を避けるため、不要になったら必ず後片付けをしてください。削除は大きく **Vault 側**・**AWS 側**・**環境 (EC2/Vault 本体)** の 3 つに分かれます。
+
+### Vault 側の後片付け
+
+root token でログインした状態で、ハンズオン中に作成した設定を削除します。
+
+```console
+$ export VAULT_ADDR="http://127.0.0.1:8200"
+
+# Sentinel EGP (ブレークグラス / IP 制限) — 残っていれば削除
+$ vault delete sys/policies/egp/break-glass
+$ vault delete sys/policies/egp/userpass-cidr
+
+# Secret Sync の宛先と関連付け
+$ vault delete sys/sync/destinations/aws-sm/my-dest/associations/set mount=kv secret_name=iam
+$ vault delete sys/sync/destinations/aws-sm/my-dest
+
+# AWS Secret Engine のロール
+$ vault delete aws/roles/subnet-role
+$ vault delete aws/roles/subnet-role-short
+
+# 認証メソッドの無効化
+$ vault auth disable approle
+$ vault auth disable aws
+$ vault auth disable userpass
+
+# ポリシーの削除
+$ vault policy delete app-policy
+$ vault policy delete demo-policy
+$ vault policy delete ec2-demo
+
+# シークレットエンジンの無効化 (KV のデータごと削除されます)
+$ vault secrets disable kv
+$ vault secrets disable aws
+
+# Audit Device の無効化
+$ vault audit disable file
+```
+
+> シークレットエンジンや認証メソッドを無効化すると、その配下のデータ・設定はすべて削除されます。消す前に必要なデータが残っていないか確認してください。
+
+### AWS 側の後片付け
+
+Terraform もしくは手動の `aws ec2 create-subnet` で作成したサブネットを削除します。[Terraform 連携](#terraform-連携) で触れたとおり、`handson-assume-role` には削除権限がないため、**削除は IAM 変更権限を持つ管理者クレデンシャルで** 実行してください。
+
+```console
+# Terraform で作成した場合: 削除権限を持つプロファイルに切り替えてから
+$ aws ec2 delete-subnet --subnet-id <SUBNET_ID> --region ap-northeast-1
+```
+
+> Terraform で作成したサブネットは、本ハンズオンのスコープロールでは `terraform destroy` できません (削除権限を含まないため)。管理者クレデンシャルで上記のように個別に削除するか、`handson-assume-role` に一時的に `ec2:DeleteSubnet` を付与して対応してください。
+
+続いて、[Vault への AWS 権限付与](#vault-への-aws-権限付与) で作成した IAM ロールと、`HandsonRole` に追加したインラインポリシーを削除します。
+
+```console
+# 対象ロールのインラインポリシーとロール本体を削除
+$ aws iam delete-role-policy --role-name handson-assume-role --policy-name handson-assume-permissions
+$ aws iam delete-role --role-name handson-assume-role
+
+# HandsonRole に追加したインラインポリシーを削除
+#   (付与時に付けたポリシー名に置き換えてください)
+$ aws iam delete-role-policy --role-name HandsonRole --policy-name VaultAwsEc2Auth
+$ aws iam delete-role-policy --role-name HandsonRole --policy-name VaultAssumeSubnetRole
+$ aws iam delete-role-policy --role-name HandsonRole --policy-name VaultSecretSync
+```
+
+> `HandsonRole` 自体は EC2 のコンソールアクセス (SSM) に使っているため、ロールごと削除せず、ハンズオンで追加したインラインポリシーだけを外すのが安全です。
+
+### 環境 (EC2 / Vault 本体) の削除
+
+Vault サーバやインスタンスごと破棄する場合は以下を行います。
+
+```console
+# Vault サービスの停止・無効化
+$ sudo systemctl disable --now vault
+
+# Vault とデータの削除 (パッケージとストレージ)
+$ sudo dnf remove -y vault-enterprise
+$ sudo rm -rf /opt/vault/data /etc/vault.d
+
+# スナップショットや鍵ファイルなど手元の成果物も忘れずに
+$ rm -f ~/vault-keys.txt ~/vault-*.snap
+```
+
+EC2 インスタンスそのものが不要であれば、最後にインスタンスを終了 (terminate) してください。インスタンスを削除すれば、インスタンスプロファイルの関連付けも解除されます。
+
+> `~/vault-keys.txt` には Unseal Key と Initial Root Token が平文で含まれます。環境を残す場合でも、不要になったら必ず安全に削除してください。
