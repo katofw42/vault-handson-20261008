@@ -493,7 +493,11 @@ Vault に AWS 権限を与える方法は大きく 2 通りです。
 1. **AssumeRole される側のロールの許可ポリシー** — Vault 経由で払い出す操作の実体 (ここでは対象 VPC にサブネットを作成する権限など) を定義します。
 2. **そのロールの信頼ポリシー (trust policy)** — 誰が AssumeRole できるか。ここでは Vault が動く EC2 のインスタンスロール (`HandsonRole`) を信頼元に指定します。
 
-まず、対象ロールに付与する **許可ポリシー** です。この例では、特定の VPC (`vpc-038685e9d70b60074`) にのみサブネットを作成でき、作成時のタグ付けと可視化のための Describe 系を許可しています。`Resource` と `Condition` を絞ることで、払い出される権限を必要最小限に限定しています。
+このハンズオンでは、**あらかじめ作成済みの VPC に対して、Vault 経由で払い出した権限でサブネットを作成する** というシナリオを題材にします。そのため対象の VPC は事前に用意しておいてください。
+
+> **プレースホルダの置き換えが必要です。** 以降の JSON やコマンドに出てくる `<ACCOUNT_ID>` (AWS アカウント ID) と `<VPC_ID>` (サブネットを作成する対象の既存 VPC の ID、例: `vpc-xxxxxxxx`) は、ご自身の環境の値に置き換えてください。リージョンも必要に応じて読み替えてください (本書では `ap-northeast-1` を使用)。
+
+まず、対象ロールに付与する **許可ポリシー** です。この例では、指定した既存 VPC (`<VPC_ID>`) にのみサブネットを作成でき、作成時のタグ付けと可視化のための Describe 系を許可しています。`Resource` と `Condition` を絞ることで、払い出される権限を必要最小限に限定しています。
 
 ```json
 {
@@ -503,19 +507,19 @@ Vault に AWS 権限を与える方法は大きく 2 通りです。
             "Sid": "CreateSubnetOnlyInTargetVPC",
             "Effect": "Allow",
             "Action": "ec2:CreateSubnet",
-            "Resource": "arn:aws:ec2:ap-northeast-1:730335563172:vpc/vpc-038685e9d70b60074"
+            "Resource": "arn:aws:ec2:ap-northeast-1:<ACCOUNT_ID>:vpc/<VPC_ID>"
         },
         {
             "Sid": "CreateSubnetResource",
             "Effect": "Allow",
             "Action": "ec2:CreateSubnet",
-            "Resource": "arn:aws:ec2:ap-northeast-1:730335563172:subnet/*"
+            "Resource": "arn:aws:ec2:ap-northeast-1:<ACCOUNT_ID>:subnet/*"
         },
         {
             "Sid": "TagOnlyWhenCreatingSubnet",
             "Effect": "Allow",
             "Action": "ec2:CreateTags",
-            "Resource": "arn:aws:ec2:ap-northeast-1:730335563172:subnet/*",
+            "Resource": "arn:aws:ec2:ap-northeast-1:<ACCOUNT_ID>:subnet/*",
             "Condition": {
                 "StringEquals": {
                     "ec2:CreateAction": "CreateSubnet"
@@ -545,7 +549,7 @@ Vault に AWS 権限を与える方法は大きく 2 通りです。
         {
             "Effect": "Allow",
             "Principal": {
-                "AWS": "arn:aws:iam::730335563172:role/HandsonRole"
+                "AWS": "arn:aws:iam::<ACCOUNT_ID>:role/HandsonRole"
             },
             "Action": "sts:AssumeRole"
         }
@@ -575,7 +579,7 @@ $ aws iam put-role-policy \
         {
             "Effect": "Allow",
             "Action": "sts:AssumeRole",
-            "Resource": "arn:aws:iam::730335563172:role/handson-assume-role"
+            "Resource": "arn:aws:iam::<ACCOUNT_ID>:role/handson-assume-role"
         }
     ]
 }
@@ -1101,25 +1105,27 @@ ttl                14m59s
 
 `access_key` が `ASIA` から始まる STS の一時クレデンシャルになっており、`arn` が `assumed-role/handson-assume-role/...` になっていることがわかります。Vault が対象ロールを AssumeRole して払い出した証拠です。
 
-払い出したクレデンシャルで、対象ロールに許可された操作だけが行えることを確認してみましょう。別端末で環境変数にセットして実行します (IAM の反映に数秒かかることがあります)。
+払い出したクレデンシャルで、対象ロールに許可された操作 (事前作成した VPC へのサブネット作成) が行えることを確認してみましょう。別端末で環境変数にセットして実行します (IAM の反映に数秒かかることがあります)。`<VPC_ID>` は [Vault への AWS 権限付与](#vault-への-aws-権限付与) で対象にした既存 VPC の ID に置き換えてください。
 
 ```console
 $ export AWS_ACCESS_KEY_ID=ASIA2UC3EJWSF43YTZU2
 $ export AWS_SECRET_ACCESS_KEY=5ruahqxcBQzW/LCt7H2jRaBUcvpt8NpkxIt2TN42
 $ export AWS_SESSION_TOKEN=IQoJb3JpZ2luX2VjE...(省略)...
 
-# 許可されている操作: 対象 VPC の参照は成功する
-$ aws ec2 describe-vpcs --vpc-ids vpc-038685e9d70b60074 --region ap-northeast-1 --query 'Vpcs[].VpcId'
-[
-    "vpc-038685e9d70b60074"
-]
+# 許可されている操作: 事前作成済みの VPC にサブネットを作成できる
+$ aws ec2 create-subnet \
+    --vpc-id <VPC_ID> \
+    --cidr-block 10.0.100.0/24 \
+    --region ap-northeast-1 \
+    --query 'Subnet.SubnetId'
+"subnet-0a1b2c3d4e5f67890"
 
 # 許可されていない操作: DescribeInstances は拒否される
 $ aws ec2 describe-instances --region ap-northeast-1
 An error occurred (UnauthorizedOperation) when calling the DescribeInstances operation: You are not authorized to perform this operation. ... is not authorized to perform: ec2:DescribeInstances ...
 ```
 
-対象ロールの許可ポリシーどおり、VPC の参照はできる一方で、許可していない `DescribeInstances` は拒否されました。Vault が払い出すクレデンシャルの権限が、AssumeRole 先ロールのスコープに正しく閉じていることが確認できます。
+対象ロールの許可ポリシーどおり、事前作成した VPC へのサブネット作成はできる一方で、許可していない `DescribeInstances` は拒否されました。Vault が払い出すクレデンシャルの権限が、AssumeRole 先ロールのスコープに正しく閉じていることが確認できます。
 
 > **TTL の注意点:** `assumed_role` の実体は STS の `AssumeRole` であり、STS の仕様上 **最小 TTL は 15 分 (900 秒)** です。`ttl=2m` のように 15 分未満を指定すると `Code: 400` のエラーになります。短命運用でも 15 分が下限となる点に注意してください。
 
