@@ -4,7 +4,7 @@
 
 本ドキュメントは、Vault を AWS 環境で一通り使い倒すことを目的とした一本道のハンズオンです。Vault のセットアップから始まり、AWS 権限付与の土台づくり、アプリケーションからの認証、シークレットの読み書き、AWS の動的クレデンシャル発行、テナントと権限の設計、Terraform 連携、そして Day2 の運用までを順に扱います。各セクションは前のセクションの状態を引き継ぐ前提で記述しているため、できるだけ順番に進めることをお勧めします。
 
-> このハンズオンは **Amazon Linux 2023** 上の **Vault Enterprise (v2.1.1)** を前提にしています。Namespace や Sentinel、Secret Sync といった Vault Enterprise の機能を利用するため、有効な Enterprise ライセンスが必要です。コマンドや出力例はすべてこの環境で実際に確認したものを掲載しています。
+> このハンズオンは **Amazon Linux 2023** 上の **Vault Enterprise (v2.1.2)** を前提にしています。Namespace や Sentinel、Secret Sync といった Vault Enterprise の機能を利用するため、有効な Enterprise ライセンスが必要です。コマンドや出力例はすべてこの環境で実際に確認したものを掲載しています。
 
 ## Pre-requisite
 
@@ -13,7 +13,7 @@
 	* EC2 には `HandsonRole` というインスタンスプロファイルを割り当て、コンソールアクセス用に SSM (`AmazonSSMManagedInstanceCore`) を持たせておきます。以降の AWS 権限付与はこのロールを起点にします。
 
 * ソフトウェア
-	* Vault Enterprise v2.1.1 (本ハンズオンの手順でインストールします)
+	* Vault Enterprise v2.1.2 (本ハンズオンの手順でインストールします)
 	* Terraform
 
 
@@ -68,7 +68,7 @@
 
 ここではまず Vault のインストールと起動、`init` / `unseal` / `seal` といったライフサイクルの操作、クラウドの鍵管理サービスを使った Auto Unseal、監査ログを記録する Audit Device、そして以降のハンズオンで使うシークレットエンジンの有効化までを扱います。
 
-このハンズオンは **Amazon Linux 2023** 上の **Vault Enterprise (v2.1.1)** を前提にしています。手元の作業端末からは SSH で Amazon Linux 2023 の EC2 インスタンスにログインし、その上で作業を進めてください。
+このハンズオンは **Amazon Linux 2023** 上の **Vault Enterprise (v2.1.2)** を前提にしています。手元の作業端末からは SSH で Amazon Linux 2023 の EC2 インスタンスにログインし、その上で作業を進めてください。
 
 ### Vault のインストール
 
@@ -80,13 +80,13 @@ $ sudo dnf config-manager --add-repo https://rpm.releases.hashicorp.com/AmazonLi
 $ sudo dnf install -y vault-enterprise
 ```
 
-Community 版 (`vault`) ではなく **`vault-enterprise`** パッケージを指定している点に注意してください。特定のバージョンを固定したい場合は`vault-enterprise-2.1.1+ent-1`のようにバージョンを付けて指定します。
+Community 版 (`vault`) ではなく **`vault-enterprise`** パッケージを指定している点に注意してください。特定のバージョンを固定したい場合は`vault-enterprise-2.1.2+ent-1`のようにバージョンを付けて指定します。
 
 インストールが終わったら、バージョンを確認します。
 
 ```console
 $ vault version
-Vault v2.1.1+ent (99f338575c1f226671bd863309439596fac1f67e), built 2026-09-15T21:39:40Z
+Vault v2.1.2+ent (8ee5bcac416a4b1020c4c64027690db129456746), built 2026-10-06T15:32:01Z
 ```
 
 `+ent`が付いているものが Enterprise バイナリです。パッケージインストールでは、設定ファイルや systemd のサービス定義もあわせて配置されます。
@@ -168,8 +168,8 @@ Total Shares            0
 Threshold               0
 Unseal Progress         0/0
 Unseal Nonce            n/a
-Version                 2.1.1+ent
-Build Date              2026-09-15T21:39:40Z
+Version                 2.1.2+ent
+Build Date              2026-10-06T15:32:01Z
 Storage Type            raft
 Removed From Cluster    false
 HA Enabled              true
@@ -221,8 +221,8 @@ Total Shares       5
 Threshold          3
 Unseal Progress    1/3
 Unseal Nonce       5ab14385-6ea9-f09b-4429-b6942c3cc005
-Version            2.1.1+ent
-Build Date         2026-09-15T21:39:40Z
+Version            2.1.2+ent
+Build Date         2026-10-06T15:32:01Z
 Storage Type       raft
 HA Enabled         true
 
@@ -238,12 +238,14 @@ Initialized             true
 Sealed                  false
 Total Shares            5
 Threshold               3
-Version                 2.1.1+ent
-Build Date              2026-09-15T21:39:40Z
+Version                 2.1.2+ent
+Build Date              2026-10-06T15:32:01Z
 Storage Type            raft
-Cluster Name            vault-cluster-8b2814c3
-Cluster ID              4808da7d-9205-e82b-3c80-71598f0fb77c
+Cluster Name            vault-cluster-2d0535cc
+Cluster ID              99b81265-528f-d8c8-255a-6f8d24e3ef33
+Removed From Cluster    false
 HA Enabled              true
+HA Cluster              n/a
 HA Mode                 standby
 Active Node Address     <none>
 Raft Committed Index    59
@@ -300,8 +302,8 @@ Total Shares            5
 Threshold               3
 Unseal Progress         0/3
 Unseal Nonce            n/a
-Version                 2.1.1+ent
-Build Date              2026-09-15T21:39:40Z
+Version                 2.1.2+ent
+Build Date              2026-10-06T15:32:01Z
 Storage Type            raft
 Removed From Cluster    false
 HA Enabled              true
@@ -347,8 +349,8 @@ Initialized              true
 Sealed                   false
 Total Recovery Shares    5
 Threshold                3
-Version                  2.1.1+ent
-Build Date               2026-09-15T21:39:40Z
+Version                  2.1.2+ent
+Build Date               2026-10-06T15:32:01Z
 Storage Type             raft
 HA Enabled               true
 ```
@@ -361,10 +363,15 @@ HA Enabled               true
 
 Vault への全てのリクエストとレスポンスを記録しておくことは、監査やインシデント調査の観点で非常に重要です。Vault では **Audit Device** を有効化することで、誰がいつどのパスにアクセスしたかを漏れなく記録できます。シークレットの値そのものはハッシュ化されて記録されるため、ログから生のシークレットが漏れることはありません。
 
-ファイルに出力する Audit Device を有効化してみます。
+ファイルに出力する Audit Device を有効化してみます。ログの出力先には、Vault を実行する`vault`ユーザが書き込めるディレクトリを用意します。ここでは`/var/log/vault/`を使います。
+
+> **注意:** パッケージ版の`vault.service`は systemd の`PrivateTmp=yes`で動くため、`/tmp`配下はサービス専用の隔離された領域になります。`file_path=/tmp/vault-audit.log`を指定するとログはホストの`/tmp`からは見えない場所に書かれてしまい、後述の`tail`で参照できません。そのため`/tmp`以外のパス (ここでは`/var/log/vault/`) を使います。
 
 ```console
-$ vault audit enable file file_path=/tmp/vault-audit.log
+$ sudo mkdir -p /var/log/vault
+$ sudo chown vault:vault /var/log/vault
+
+$ vault audit enable file file_path=/var/log/vault/audit.log
 Success! Enabled the file audit device at: file/
 
 $ vault audit list
@@ -373,20 +380,20 @@ Path     Type    Description
 file/    file    n/a
 ```
 
-有効化すると、以降の全ての操作がログに記録されます。試しに何かリクエストを投げてからログを覗いてみましょう。
+有効化すると、以降の全ての操作がログに記録されます。試しに何かリクエストを投げてからログを覗いてみましょう。ログファイルは`vault`ユーザ所有 (パーミッション 600) で作られるため、参照には`sudo`を使います。
 
 ```console
 $ vault secrets list > /dev/null
-$ tail -n 1 /tmp/vault-audit.log | jq
+$ sudo tail -n 1 /var/log/vault/audit.log | jq
 {
-  "time": "2026-10-07T02:11:38.123456Z",
+  "time": "2026-10-07T17:50:54.652730286Z",
   "type": "response",
   "auth": {
     "client_token": "hmac-sha256:...",
     "policies": ["root"]
   },
   "request": {
-    "operation": "list",
+    "operation": "read",
     "path": "sys/mounts"
   }
 }
@@ -414,12 +421,12 @@ Success! Enabled the aws secrets engine at: aws/
 $ vault secrets list
 Path               Type              Accessor                   Description
 ----               ----              --------                   -----------
-agent-registry/    agent_registry    agent-registry_eeb36c2a    agent registry
-aws/               aws               aws_7dc02279               n/a
-cubbyhole/         cubbyhole         cubbyhole_21473bac         per-token private secret storage
-identity/          identity          identity_b0a1517a          identity store
-kv/                kv                kv_b8d0d6f4                n/a
-sys/               system            system_570ec64b            system endpoints used for control, policy and debugging
+agent-registry/    agent_registry    agent-registry_78657e75    agent registry
+aws/               aws               aws_745b3153               n/a
+cubbyhole/         cubbyhole         cubbyhole_a9fbdd5c         per-token private secret storage
+identity/          identity          identity_2689cb7d          identity store
+kv/                kv                kv_e5f087d7                n/a
+sys/               system            system_02822775            system endpoints used for control, policy and debugging
 ```
 
 `kv/`と`aws/`がそれぞれ API のエンドポイントとしてマウントされました。以降の章ではこれらのパスを使ってシークレットを扱っていきます。不要になったエンジンは`vault secrets disable <path>`で無効化できます。
