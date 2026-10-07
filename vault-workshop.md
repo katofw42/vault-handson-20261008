@@ -569,43 +569,181 @@ Code: 403. Errors:
 
 > Sentinel は **Vault Enterprise / HCP Vault** でのみ利用できる Policy as Code のフレームワークです。
 
-Policy が「どのパスにアクセスできるか」を制御するのに対し、Sentinel は「どういう条件のときに操作を許可するか」という、より高度なガバナンスをコードで表現できます。例えば「平日の業務時間内しか本番シークレットを読めない」「特定の CIDR からのアクセスに限る」といったルールです。
+Policy (ACL) が「どのパスにアクセスできるか」を制御するのに対し、Sentinel は「どういう条件のときに操作を許可するか」という、ACL だけでは表現できないロジックベースのガバナンスをコードで記述できます。接続元 IP やトークンの発行時刻、リクエスト内容などを条件にできるため、ゼロトラストやインシデント対応といった Enterprise のセキュリティ要件を Vault 側で強制できます。
 
-Sentinel ポリシーには適用の強さに応じて 3 つのモードがあります。
+Sentinel ポリシーには、評価対象によって 2 種類があります。
+
+* **EGP (Endpoint Governing Policy)** — 特定の **パス** に紐付く。ログインパスなど未認証のパスにも適用できる
+* **RGP (Role Governing Policy)** — 特定の **トークン / Identity エンティティ / グループ** に紐付く
+
+さらに適用の強さに応じて 3 つのモードがあります。
 
 * `advisory` — 違反しても警告を出すだけで操作は通す
 * `soft-mandatory` — 原則ブロックするが、root 権限で上書きできる
 * `hard-mandatory` — 例外なくブロックする
 
-例として、業務時間 (平日 9〜18 時) 以外は書き込みを拒否する EGP (Endpoint Governing Policy) を書いてみます。
+ここでは Enterprise で特に需要の高い 2 つのユースケースを、実際に動かして確認します。1 つはインシデント対応のための **ブレークグラス (一斉トークン失効)**、もう 1 つはネットワーク統制のための **ログイン元 IP の制限** です。
+
+> **補足:** Sentinel の`print()`によるデバッグ出力は、ポリシー評価が **失敗したときだけ** サーバログに出力されます。成功時には出力されない点に注意してください。
+
+#### ユースケース 1: ブレークグラス (一斉トークン失効)
+
+トークンや生成済みシークレットが漏洩した可能性が判明したとき、「ある時刻より前に発行されたトークンを一斉に無効化したい」という要件が生まれます。全トークンを個別に revoke するのは時間がかかり、漏洩していないトークンまで巻き込んでしまいます。Sentinel なら、トークンの発行時刻 (`token.creation_time`) を条件に、カットオフ時刻より前のトークンだけを一括で遮断できます。
+
+まず、検証用に「古いトークン」と、カットオフ時刻をはさんだ「新しいトークン」を用意します。
+
+```console
+$ export VAULT_ADDR="http://127.0.0.1:8200"
+$ OLD_TOKEN=$(vault token create -policy=default -ttl=60m -field=token)   # カットオフ前に発行
+$ CUTOFF=$(date -u +%Y-%m-%dT%H:%M:%SZ)                                   # この時刻を基準にする
+$ NEW_TOKEN=$(vault token create -policy=default -ttl=60m -field=token)   # カットオフ後に発行
+```
+
+次にブレークグラス用の EGP を書きます。`rule when not request.unauthenticated`で認証済みリクエストだけを対象にし、トークンの発行時刻がカットオフより後 (= 漏洩に関与していない) の場合のみ許可します。`<CUTOFF>`は上で取得した時刻に置き換えてください。
 
 ```python
 import "time"
 
-workday = rule {
-    time.now.weekday > 0 and time.now.weekday < 6
-}
-
-workhour = rule {
-    time.now.hour >= 9 and time.now.hour < 18
-}
-
-main = rule {
-    workday and workhour
+main = rule when not request.unauthenticated {
+    time.load(token.creation_time).unix > time.load("<CUTOFF>").unix
 }
 ```
 
-このポリシーを特定のパスに紐付けて適用します。
+全パスに適用したいので、`paths="*"`・`hard-mandatory`で登録します。
 
 ```console
-$ vault write sys/policies/egp/business-hours \
-    policy=@business-hours.sentinel \
-    paths="kv/*" \
-    enforcement_level="soft-mandatory"
-Success! Data written to: sys/policies/egp/business-hours
+$ vault write sys/policies/egp/break-glass \
+    policy=@break-glass.sentinel \
+    paths="*" \
+    enforcement_level="hard-mandatory"
+Success! Data written to: sys/policies/egp/break-glass
 ```
 
-これにより、業務時間外に`kv/*`への操作が行われると、`soft-mandatory`の設定に従ってブロックされます (root では上書き可能)。Sentinel を使うと、Policy だけでは表現しきれない組織のコンプライアンス要件を Vault 側で強制できます。
+では古いトークンで操作してみます。カットオフより前に発行されているため、拒否されます。
+
+```console
+$ VAULT_TOKEN=$OLD_TOKEN vault token lookup
+Error looking up token: Error making API request.
+
+URL: GET http://127.0.0.1:8200/v1/auth/token/lookup-self
+Code: 403. Errors:
+
+* 2 errors occurred:
+	* egp standard policy "root/break-glass" evaluation resulted in denial.
+The specific error was:
+<nil>
+A trace of the execution for policy "root/break-glass" is available:
+Result: false
+Description: <none>
+Rule "main" (root/break-glass:2:1) = false
+	* permission denied
+```
+
+一方、カットオフより後に発行された新しいトークンは問題なく通ります。
+
+```console
+$ VAULT_TOKEN=$NEW_TOKEN vault token lookup
+Key                 Value
+---                 -----
+display_name        token
+policies            [default]
+ttl                 59m
+...
+```
+
+このように、トークンを個別に revoke することなく、発行時刻を境に「疑わしいトークンだけ」を即座に遮断できます。対応が済んだらポリシーを削除して通常運用に戻します。
+
+```console
+$ vault delete sys/policies/egp/break-glass
+Success! Data deleted (if it existed) at: sys/policies/egp/break-glass
+```
+
+#### ユースケース 2: ログイン元 IP を制限する
+
+次はネットワーク統制です。「社内ネットワーク (特定の CIDR) からのログインしか認めない」という要件を、`sockaddr`インポートを使って認証メソッドのログインパスに適用します。ここでは`userpass`認証メソッドで検証します。
+
+まず検証用の認証メソッドとユーザを用意します。
+
+```console
+$ vault auth enable userpass
+Success! Enabled userpass auth method at: userpass/
+
+$ vault write auth/userpass/users/alice password=pass policies=default
+Success! Data written to: auth/userpass/users/alice
+```
+
+次に、許可する CIDR を`10.0.0.0/8`に限定する EGP を書きます。`request.connection.remote_addr` (接続元 IP) がその範囲に含まれるかを`sockaddr.is_contained`で判定し、`rule when`でログインパスのときだけ評価します。
+
+```python
+import "sockaddr"
+import "strings"
+
+# 社内ネットワークとして許可する CIDR
+allowed_cidr = "10.0.0.0/8"
+
+cidrcheck = rule {
+    sockaddr.is_contained(allowed_cidr, request.connection.remote_addr)
+}
+
+main = rule when strings.has_prefix(request.path, "auth/userpass/login") {
+    cidrcheck
+}
+```
+
+ログインパスに紐付けて登録します。
+
+```console
+$ vault write sys/policies/egp/userpass-cidr \
+    policy=@userpass-cidr.sentinel \
+    paths="auth/userpass/login/*" \
+    enforcement_level="hard-mandatory"
+Success! Data written to: sys/policies/egp/userpass-cidr
+```
+
+このハンズオン環境では Vault へローカル (`127.0.0.1`) から接続しているため、許可 CIDR の`10.0.0.0/8`には含まれません。ログインを試すと拒否されます。
+
+```console
+$ vault login -method=userpass username=alice password=pass
+Error authenticating: Error making API request.
+
+URL: PUT http://127.0.0.1:8200/v1/auth/userpass/login/alice
+Code: 400. Errors:
+
+* 2 errors occurred:
+	* egp standard policy "root/userpass-cidr" evaluation resulted in denial.
+The specific error was:
+<nil>
+	* permission denied
+```
+
+逆に、許可 CIDR に自分の接続元を含めれば通ります。`allowed_cidr`を`127.0.0.1/32`に変えて同じパスに上書き登録し、再度ログインしてみましょう。
+
+```console
+$ vault write sys/policies/egp/userpass-cidr \
+    policy=@userpass-cidr-local.sentinel \
+    paths="auth/userpass/login/*" \
+    enforcement_level="hard-mandatory"
+Success! Data written to: sys/policies/egp/userpass-cidr
+
+$ vault login -method=userpass username=alice password=pass
+Success! You are now authenticated. The token information displayed below
+is already stored in the token helper.
+
+Key                    Value
+---                    -----
+token                  hvs.CAESI....
+token_policies         ["default"]
+...
+```
+
+同じユーザ・同じ認証情報でも、接続元 IP が許可範囲外ならログイン自体が成立しません。ACL では表現できない「どこからアクセスしているか」という条件を、Sentinel なら認証の段階で強制できます。確認が済んだらポリシーを削除しておきます。
+
+```console
+$ vault delete sys/policies/egp/userpass-cidr
+Success! Data deleted (if it existed) at: sys/policies/egp/userpass-cidr
+```
+
+Sentinel を使うと、このように Policy (ACL) だけでは表現しきれない組織のコンプライアンス要件やインシデント対応のロジックを、Vault 側でコードとして強制できます。
 
 ### Vault への AWS 権限付与
 
@@ -677,253 +815,112 @@ Vault では以下のような認証プロバイダに対応しています。
 
 ### AWS Auth
 
-Vault の AWS での Authentication のデモになります。
-デモの実行については、この Repo を Clone して[こちらの Asset](assets/auth_aws)をご使用ください。
+AWS auth method を使うと、AWS 上で動くインスタンスやサービスが、AWS が発行する認証情報をそのまま使って Vault にログインできます。アプリの中に Vault 用のクレデンシャルを別途埋め込む必要がなくなるのが大きな利点です。
 
-AWS auth method については、[こちら](https://www.vaultproject.io/docs/auth/aws.html)を参照ください。
+AWS auth method には `iam` と `ec2` の 2 つのタイプがあります。
 
-AWS auth method には２つのタイプがあります。`iam`と`ec2`の２種類です。
-`iam`method では、IAM クレデンシャルでサインされた特別な AWS リクエストに対して認証を行います。IAM クレデンシャルは IAM instance profile や Lambda などで自動的に作成されるので、AWS 上のほぼ全てのサービスに対して利用できます。
+* **`iam` method** — IAM クレデンシャルで署名した AWS リクエストに対して認証します。IAM ロールは EC2 のインスタンスプロファイルや Lambda などで自動的に利用できるため、AWS 上のほぼ全てのサービスに適用できます。より柔軟なアクセス制御ができるため、現在のベストプラクティスとしては基本的にこちらが推奨されます。
+* **`ec2` method** — AWS が各 EC2 インスタンスに付与する **インスタンスアイデンティティドキュメント** (メタデータ) を使って認証します。EC2 インスタンスでしか使えませんが、追加のクレデンシャルを一切持たずに「この EC2 である」ことだけで認証できるのが特徴です。
 
-`ec2`method は、AWS が EC2 インスタンスに自動的に付与するメタデータを用いて認証を行います。よって、この認証方法は EC2 のインスタンスにしか利用できません。
+ここでは、用意済みの EC2 1 台だけで完結する形で、**`ec2` method**（インスタンスメタデータによるログイン）を実際に動かして確認します。Vault サーバと認証されるクライアントは同じ EC2 上にあり、この EC2 が自分自身のインスタンスアイデンティティで Vault にログインします。
 
-`ec2`method は`iam`method の登場の前に開発されたもので、現在のベスト・プラクティスとしてはより柔軟かつ高度なアクセスコントロールのある`iam`method を推奨しています。
+#### 事前準備: Vault 側の設定
 
-このデモでは`iam`method を用いています。
+まず、ec2 method のログインを成立させるために必要な Vault 側の設定を行います。root token でログインした状態で実行してください。
 
-#### Demo setup
-
-1.
-まずは、`terraform.tfvars.example`を`terraform.tfvars`と変名して、中身を環境に合わせて変更してください。
-変更してほしいもの：
-* key_name
-* aws_region
-* availabiliy_zones
-
-```hcl
-#-------------------
-# Required: こちらを各自の環境に合わせて変更ください
-#-------------------
-
-# SSH key name to access EC2 instances. This should already exist in the AWS Region
-key_name = "MY_EC2_KEY_NAME"
-
-# AWS region & AZs
-aws_region = "ap-northeast-1"
-availability_zones = "ap-northeast-1a"
-
-#-----------------------------------------------
-# Optional: To overwrite the default settings
-#-----------------------------------------------
-
-# All resources will be tagged with this (default is 'vault-agent-demo')
-environment_name = "vault-agent-demo"
-
-# Instance size (default is t2.micro)
-instance_type = "t2.micro"
-
-# Number of Vault servers to provision (default is 1)
-vault_server_count = 1
-```
-
-2.
-Terraform でプロビジョニングします。AWS のクレデンシャルを環境変数などに追加するのを忘れないでください。
-
-```shell
-$ export AWS_ACCESS_KEY_ID=xxxxxxxxxxxx
-$ export AWS_SECRET_ACCESS_KEY=xxxxxxxxxxxx
-
-$ terraform init
-
-$ terraform plan
-
-# Output provides the SSH instruction
-$ terraform apply -auto-approve
-```
-
-3. 以下のようなアウトプットが表示され、EC2 に２つのインスタンスが出来上がっていれば成功です。
-
-```console
-Apply complete! Resources: 20 added, 0 changed, 0 destroyed.
-
-Outputs:
-
-endpoints =
-Vault Server IP (public):  3.112.22.241
-Vault Server IP (private): 10.0.101.67
-
-For example:
-   ssh -i masa.pem ubuntu@3.112.22.241
-
-Vault Client IP (public):  13.115.119.242
-Vault Client IP (private): 10.0.101.96
-
-For example:
-   ssh -i masa.pem ubuntu@13.115.119.242
-
-Vault Client IAM Role ARN: arn:aws:iam::753278538983:role/masa-vault-auth-vault-client-role
-```
-
-ここでは 2 つのインスタンスを作成しています。
-一つは、Vault server でもう一つは Vault client です。AWS 認証を行なう Vault Server はどこに立ち上げても構いませんが（GCP や Azure でも可）、認証される側の Client は AWS 上のインスタンスやサービスである必用があります（IAM ロールが付随している必用があるため）。
-
-これでデモのセットアップは完了です。
-
-#### Vault server のセットアップ
-
-まず、上記アウトプットに表示される Vault server へ ssh で入ります。
-そして Vault が立ち上がっているか確認してください。
-
-```console
-ubuntu@ip-10-0-101-67:~$ vault status
-Key                      Value
----                      -----
-Recovery Seal Type       awskms
-Initialized              false
-Sealed                   true
-Total Recovery Shares    0
-Threshold                0
-Unseal Progress          0/0
-Unseal Nonce             n/a
-Version                  n/a
-HA Enabled               true
-```
-
-`vault status`コマンドでエラーがでなければ Vault は正常に起動しています。ただ、この状態｀Initialized｀が False であり、`Sealed`は true になっています。つまり、Vault は起動しているが、まだ初期化がされておらず、Seal 状態であるということです。
-
-それでは、次に Vault の初期化を行います。このデモでは [Vault セットアップ](#vault-セットアップ) で説明した AWS KMS による **Auto Unseal** を使っています。Auto Unseal の設定方法は、Server 上の`/etc/vault.d/vault.hcl`を参照ください。
-
-```console
-ubuntu@ip-10-0-101-67:~$ vault operator init
-Recovery Key 1: 2bxJ0k7+lpoK8o6MAj7ebecIzh9V5d2n9L0GfWyUJjmn
-...(省略)...
-Initial Root Token: s.Vfj4S1Wx5bFY5xms5eF751pr
-
-Success! Vault is initialized
-```
-
-ここで表示される**Initial Root Token**の値を必ずメモしてください。`vault operator init`で初期化されると、**Auto unseal**のおかげで自動的に Vault が Unseal 状態になります (*Sealed = false*)。
-
-次にデモ用にシークレットエンジンと Auth method を設定します。
-ホームディレクトリにある`aws_auth.sh`を見てください。
-
-```shell
-vault secrets enable -path="secret" kv
-vault kv put secret/myapp/config ttl='30s' username='appuser' password='suP3rsec(et!'
-
-echo "path \"secret/myapp/*\" {
-    capabilities = [\"read\", \"list\"]
-}" | vault policy write myapp -
-
-vault auth enable aws
-vault write -force auth/aws/config/client
-
-vault write auth/aws/role/dev-role-iam auth_type=iam bound_iam_principal_arn="arn:aws:iam::753278538983:role/masa-vault-auth-vault-client-role" policies=myapp ttl=24h
-```
-
-このスクリプトでは、Vault の K/V シークレットエンジンをマウントし、`secret/myapp/config`にシークレット情報を書き込んでいます。そして、そのシークレットにだけアクセス可能な**policy**を作成します。
-さらに、AWS auth method の認証も設定しています。Vault 上に`dev-role-iam`という Role を作成し、ここで指定した IAM ロールの Client に対して、作成した`myapp`という policy を付与します。
-
-このデモでは、Vault server に紐付けられた IAM ロールを用いて AWS auth method を設定しています。もし別の IAM ロールや IAM ユーザーの権限で認証を行いたい場合は、以下のように個別に設定することも可能です。
-
-```console
-$ vault write auth/aws/config/client secret_key=vCtSM8ZUEQ3mOFVlYPBQkf2sO6F/W7a5TVzrl3Oj access_key=VKIAJBRHKH6EVTTNXDHA
-```
-
-またその場合、認証用の IAM ポリシーは最低限以下の権限を与えてください。
+ec2 method では、ログイン時に Vault が AWS に問い合わせてインスタンスの正当性を検証します。そのため **Vault の実行環境 (この EC2 のインスタンスロール) に `ec2:DescribeInstances` の権限が必要** です。IAM ロールを束縛条件に使う場合は `iam:GetInstanceProfile` も必要になります。以下のインラインポリシーを、この EC2 のインスタンスロールに付与しておきます。
 
 ```json
 {
   "Version": "2012-10-17",
   "Statement": [
     {
+      "Sid": "VaultAwsEc2Auth",
       "Effect": "Allow",
       "Action": [
         "ec2:DescribeInstances",
-        "iam:GetInstanceProfile",
-        "iam:GetUser",
-        "iam:GetRole"
+        "iam:GetInstanceProfile"
       ],
       "Resource": "*"
-    },
-    {
-      "Effect": "Allow",
-      "Action": ["sts:AssumeRole"],
-      "Resource": [
-        "arn:aws:iam::<AccountId>:role/<VaultRole>"
-      ]
     }
   ]
 }
 ```
 
-それでは、スクリプトを実行してみます。Vault コマンドの実行には、まず権限のある Token を用いて login する必要があります。上記の`vault operator init`の際に作成された**Initial Root Token**でログインした上でスクリプトを実行します。
+> 権限が不足している場合、ログイン時に `failed to verify instance ID: ... UnauthorizedOperation ... ec2:DescribeInstances` というエラーになります。
+
+次に、aws 認証メソッドを有効化し、Vault が AWS API を呼ぶためのクライアント設定を行います。この EC2 はインスタンスロールを持っているため、`auth/aws/config/client` に static なアクセスキーを渡す必要はありません (Vault がインスタンスロールの一時クレデンシャルを自動的に利用します)。
 
 ```console
-ubuntu@ip-10-0-101-67:~$ vault login s.Vfj4S1Wx5bFY5xms5eF751pr
-Success! You are now authenticated.
-
-ubuntu@ip-10-0-101-67:~$ ./aws_auth.sh
-Success! Enabled the kv secrets engine at: secret/
-Success! Data written to: secret/myapp/config
-Success! Uploaded policy: myapp
+$ export VAULT_ADDR="http://127.0.0.1:8200"
+$ vault auth enable aws
 Success! Enabled aws auth method at: aws/
+
+$ vault write -f auth/aws/config/client
 Success! Data written to: auth/aws/config/client
-Success! Data written to: auth/aws/role/dev-role-iam
 ```
 
-これで Vault server 側の設定は終わりです。
-
-#### Vault client のセットアップ
-
-それでは、Vault client 側から AWS 認証で Vault にアクセスし、シークレットの読み出しができるか確認してみましょう。
-
-まず、Vault client に ssh でログインします。もし、Vault client の IP アドレスが分からなくなった場合は、`terraform output`コマンドで確認してください。`vault status`コマンドを叩いて、Vault server につながっているか確認します。ちなみに Vault server は**VAULT_ADDR**という環境変数で指定されています。
-
-この状態でシークレットが読み出せるか試してみます。
+認証に成功したトークンへ割り当てるポリシーを作成します。ここでは `kv` を読めるだけの `ec2-demo` を用意します。
 
 ```console
-ubuntu@ip-10-0-101-96:~$ vault read secret/myapp/config
-Error reading secret/myapp/config: Error making API request.
-
-URL: GET http://10.0.101.67:8200/v1/secret/myapp/config
-Code: 400. Errors:
-
-* missing client token
+$ echo 'path "kv/*" { capabilities = ["read","list"] }' | vault policy write ec2-demo -
+Success! Uploaded policy: ec2-demo
 ```
 
-まだ認証をしていないので、Token が無くエラーになります。
-それでは、認証をしてみます。認証は`vault login`コマンドを使用します。`-method=aws`で AWS 認証を行うことを指定し、`role=dev-role-iam`で Vault 上のどの Role の Token を取得するか指定します。それでは実行してみましょう。
+最後に、ec2 method のロールを作成します。`auth_type=ec2` を指定し、どのインスタンスを認証対象とするかを束縛条件で絞ります。ここではインスタンスプロファイルの ARN で束縛しています (他にも `bound_ami_id`・`bound_vpc_id`・`bound_account_id` などが使えます)。`<ACCOUNT_ID>` はご自身の AWS アカウント ID に置き換えてください。
 
 ```console
-ubuntu@ip-10-0-101-96:~$ vault login -method=aws role=dev-role-iam
-Success! You are now authenticated. The token information displayed below
-is already stored in the token helper.
-
-Key                                Value
----                                -----
-token                              s.3BiCdXIBpmRf68iFi1wXnj6i
-token_duration                     24h
-token_renewable                    true
-token_policies                     ["default" "myapp"]
-policies                           ["default" "myapp"]
-token_meta_canonical_arn           arn:aws:iam::753646501470:role/masa-vault-auth-vault-client-role
-token_meta_auth_type               iam
+$ vault write auth/aws/role/ec2-role \
+    auth_type=ec2 \
+    bound_iam_instance_profile_arn="arn:aws:iam::<ACCOUNT_ID>:instance-profile/*" \
+    policies=ec2-demo \
+    ttl=1h
+Success! Data written to: auth/aws/role/ec2-role
 ```
 
-認証が成功し、トークンが返ってきました。ここで再度、シークレットの読み出しをしてみます。
+これで Vault 側の事前設定は完了です。整理すると、ec2 method のログインに必要な事前設定は以下の 4 つです。
+
+1. `vault auth enable aws` — aws 認証メソッドの有効化
+2. `vault write -f auth/aws/config/client` — Vault が AWS を照会するためのクライアント設定
+3. ログイン後に付与するポリシーの作成
+4. `auth_type=ec2` のロール作成 (束縛条件を 1 つ以上指定)
+
+加えて AWS 側では、前述のとおり Vault の実行ロールに `ec2:DescribeInstances` 権限が必要です。
+
+#### メタデータを使ってログインする
+
+それでは、この EC2 のインスタンスメタデータを使ってログインします。EC2 のメタデータサービス (IMDSv2) から、インスタンスアイデンティティドキュメントの **PKCS#7 署名** を取得し、それを `auth/aws/login` に渡します。
 
 ```console
-ubuntu@ip-10-0-101-96:~$ vault read secret/myapp/config
-Key                 Value
----                 -----
-refresh_interval    30s
-password            suP3rsec(et!
-ttl                 30s
-username            appuser
+$ TOKEN=$(curl -s -X PUT "http://169.254.169.254/latest/api/token" \
+    -H "X-aws-ec2-metadata-token-ttl-seconds: 300")
+$ PKCS7=$(curl -s -H "X-aws-ec2-metadata-token: $TOKEN" \
+    http://169.254.169.254/latest/dynamic/instance-identity/pkcs7 | tr -d '\n')
+$ NONCE=$(uuidgen)
+
+$ vault write auth/aws/login role=ec2-role pkcs7="$PKCS7" nonce="$NONCE"
+Key                            Value
+---                            -----
+token                          hvs.CAESIKQIrfE2F-lr3Kq5HmHZz66d4r1lJqehAsYIIW3oe4Ex...
+token_accessor                 4OQKRMDsn6UjfprHU1ZyMnAP
+token_duration                 1h
+token_renewable                true
+token_policies                 ["default" "ec2-demo"]
+identity_policies              []
+policies                       ["default" "ec2-demo"]
+token_meta_account_id          730335563172
+token_meta_auth_type           ec2
+token_meta_role                ec2-role
+token_meta_role_tag_max_ttl    0s
 ```
 
-今回は読み出しに成功しました。AWS 認証を使うと AWS 上のサービスやインスタンスで使用される IAM ロールを用いて簡単に Vault にアクセスすることができます。これにより AWS 上で動くインスタンスやサービスは、アプリケーション内に認証用のシークレットを保管する必要がなくなり、また Vault 認証用のメカニズムも非常に簡単に導入することができます。
+ログインに成功し、`ec2-demo` ポリシーの付いたトークンが発行されました。`token_meta_auth_type` が `ec2` になっており、この EC2 がメタデータの署名だけで認証されたことがわかります。アクセスキーやパスワードを一切渡していない点に注目してください。
+
+> `nonce` は再認証を防ぐための値です。同じインスタンスで再度ログインする際は、初回と同じ nonce を使う必要があります (省略すると Vault が生成し、`token_meta` 経由では返りません)。クライアント側で nonce を保持する運用が前提です。
+>
+> なお、CLI ヘルパーの `vault login -method=aws` は既定で `iam` method を使うため、`ec2` method のロールに対しては `auth method iam not allowed for role ...` というエラーになります。ec2 method では上記のように `vault write auth/aws/login` でメタデータの PKCS#7 を直接渡す形が確実です。
+
+発行されたトークンで、ポリシーどおり `kv` が読めることを確認できます。これで、AWS 上の EC2 が「自分が何者か」をメタデータで証明するだけで Vault にログインし、権限に応じたシークレットへアクセスできることが確認できました。
 
 ### AppRole
 
