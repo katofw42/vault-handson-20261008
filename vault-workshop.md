@@ -59,9 +59,8 @@
 	- [バックアップ (スナップショットの取得)](#バックアップ-スナップショットの取得)
 	- [リストア (スナップショットからの復元)](#リストア-スナップショットからの復元)
 9. [クリーンアップ (削除手順)](#クリーンアップ-削除手順)
-	- [Vault 側の後片付け](#vault-側の後片付け)
 	- [AWS 側の後片付け](#aws-側の後片付け)
-	- [環境 (EC2 / Vault 本体) の削除](#環境-ec2--vault-本体-の削除)
+	- [EC2 インスタンスの削除](#ec2-インスタンスの削除)
 
 ---
 
@@ -490,7 +489,7 @@ Vault に AWS 権限を与える方法は大きく 2 通りです。
 
 > **プレースホルダの置き換えが必要です。** 以降の JSON やコマンドに出てくる `<ACCOUNT_ID>` (AWS アカウント ID) と `<VPC_ID>` (サブネットを作成する対象の既存 VPC の ID、例: `vpc-xxxxxxxx`) は、ご自身の環境の値に置き換えてください。リージョンも必要に応じて読み替えてください (本書では `ap-northeast-1` を使用)。
 
-まず、対象ロールに付与する **許可ポリシー** です。この例では、指定した既存 VPC (`<VPC_ID>`) にのみサブネットを作成でき、作成時のタグ付けと可視化のための Describe 系を許可しています。`Resource` と `Condition` を絞ることで、払い出される権限を必要最小限に限定しています。
+まず、対象ロールに付与する **許可ポリシー** です。この例では、指定した既存 VPC (`<VPC_ID>`) にサブネットを作成・削除でき、作成時のタグ付けと可視化のための Describe 系を許可しています。`Resource` と `Condition` を絞ることで、払い出される権限を必要最小限に限定しています。サブネットの削除 (`ec2:DeleteSubnet`) と `ec2:DescribeNetworkInterfaces` を含めているのは、[Terraform 連携](#terraform-連携) の `terraform destroy` で作成したサブネットを後片付けできるようにするためです。
 
 ```json
 {
@@ -520,12 +519,19 @@ Vault に AWS 権限を与える方法は大きく 2 通りです。
             }
         },
         {
+            "Sid": "DeleteSubnetResource",
+            "Effect": "Allow",
+            "Action": "ec2:DeleteSubnet",
+            "Resource": "arn:aws:ec2:ap-northeast-1:<ACCOUNT_ID>:subnet/*"
+        },
+        {
             "Sid": "ReadOnlyForVisibility",
             "Effect": "Allow",
             "Action": [
                 "ec2:DescribeSubnets",
                 "ec2:DescribeVpcs",
-                "ec2:DescribeAvailabilityZones"
+                "ec2:DescribeAvailabilityZones",
+                "ec2:DescribeNetworkInterfaces"
             ],
             "Resource": "*"
         }
@@ -1583,7 +1589,7 @@ subnet_id = "subnet-051fbd108f81654ea"
 
 実行の裏側では、[AWS Secret Engine](#aws-secret-engine) の章で見たのと同じように、Vault が `handson-assume-role` を AssumeRole した STS の一時クレデンシャルが払い出され、そのクレデンシャルでサブネットが作成されます。リースが切れるとクレデンシャルは自動的に失効します。これにより、Terraform の実行ごとにユニークで短命なクレデンシャルが使われ、長期間有効なキーを一切保持する必要がなくなります。
 
-> **`terraform destroy` について:** 本ハンズオンの `handson-assume-role` は `ec2:CreateSubnet` など「作成系」の権限しか持たないため、このクレデンシャルでは `terraform destroy` (サブネット削除) は `UnauthorizedOperation` で失敗します。これは「払い出す権限を必要最小限に絞る」設計の表れです。作成したサブネットの削除は、[クリーンアップ (削除手順)](#クリーンアップ-削除手順) を参照し、削除権限を持つ管理者クレデンシャルで行ってください。
+> **`terraform destroy` について:** [Vault への AWS 権限付与](#vault-への-aws-権限付与) で `handson-assume-role` に `ec2:DeleteSubnet` を含めているため、同じ Vault 動的クレデンシャルで `terraform destroy` を実行すれば、作成したサブネットを削除できます。手動で作成したサブネットの削除も含め、まとめた手順は [クリーンアップ (削除手順)](#クリーンアップ-削除手順) を参照してください。
 
 > HCP Terraform / Terraform Enterprise では、ワークスペースと Vault の間に信頼関係を結び、ワークロードアイデンティティで Vault を認証する **Vault-backed dynamic credentials** が利用できます。この場合`VAULT_TOKEN`すら保持する必要がなくなります。
 
@@ -1718,90 +1724,70 @@ password    passwd
 
 ## クリーンアップ (削除手順)
 
-ハンズオンで作成したリソースをまとめて削除します。課金や権限の残存を避けるため、不要になったら必ず後片付けをしてください。削除は大きく **Vault 側**・**AWS 側**・**環境 (EC2/Vault 本体)** の 3 つに分かれます。
+ハンズオンで作成したリソースを削除します。課金や権限の残存を避けるため、不要になったら必ず後片付けをしてください。
 
-### Vault 側の後片付け
-
-root token でログインした状態で、ハンズオン中に作成した設定を削除します。
-
-```console
-$ export VAULT_ADDR="http://127.0.0.1:8200"
-
-# Sentinel EGP (ブレークグラス / IP 制限) — 残っていれば削除
-$ vault delete sys/policies/egp/break-glass
-$ vault delete sys/policies/egp/userpass-cidr
-
-# Secret Sync の宛先と関連付け
-$ vault delete sys/sync/destinations/aws-sm/my-dest/associations/set mount=kv secret_name=iam
-$ vault delete sys/sync/destinations/aws-sm/my-dest
-
-# AWS Secret Engine のロール
-$ vault delete aws/roles/subnet-role
-$ vault delete aws/roles/subnet-role-short
-
-# 認証メソッドの無効化
-$ vault auth disable approle
-$ vault auth disable aws
-$ vault auth disable userpass
-
-# ポリシーの削除
-$ vault policy delete app-policy
-$ vault policy delete demo-policy
-$ vault policy delete ec2-demo
-
-# シークレットエンジンの無効化 (KV のデータごと削除されます)
-$ vault secrets disable kv
-$ vault secrets disable aws
-
-# Audit Device の無効化
-$ vault audit disable file
-```
-
-> シークレットエンジンや認証メソッドを無効化すると、その配下のデータ・設定はすべて削除されます。消す前に必要なデータが残っていないか確認してください。
+**Vault 本体の中の設定 (シークレットエンジン・認証メソッド・ポリシー・Sentinel・Secret Sync など) は、個別に消す必要はありません。** 本ハンズオンの Vault は専用の EC2 インスタンス上で動いており、最後にインスタンスごと破棄するため、Vault 内部の後片付けは不要です。残るのは **AWS 側に作られたリソース** と **EC2 インスタンス本体** です。
 
 ### AWS 側の後片付け
 
-Terraform もしくは手動の `aws ec2 create-subnet` で作成したサブネットを削除します。[Terraform 連携](#terraform-連携) で触れたとおり、`handson-assume-role` には削除権限がないため、**削除は IAM 変更権限を持つ管理者クレデンシャルで** 実行してください。
+#### 1. 作成したサブネットを削除する
+
+[Terraform 連携](#terraform-連携) で `handson-assume-role` に `ec2:DeleteSubnet` を含めているため、Terraform で作成したサブネットは **同じ Vault 動的クレデンシャルで `terraform destroy`** できます。
 
 ```console
-# Terraform で作成した場合: 削除権限を持つプロファイルに切り替えてから
+$ export VAULT_ADDR="http://127.0.0.1:8200"
+$ export VAULT_TOKEN=$(vault print token)
+$ cd /path/to/tf-subnet
+$ terraform destroy -auto-approve
+```
+
+手動の `aws ec2 create-subnet` で作成したサブネットが残っている場合は、個別に削除します。発行した Vault クレデンシャル (または削除権限を持つプロファイル) で実行してください。
+
+```console
 $ aws ec2 delete-subnet --subnet-id <SUBNET_ID> --region ap-northeast-1
 ```
 
-> Terraform で作成したサブネットは、本ハンズオンのスコープロールでは `terraform destroy` できません (削除権限を含まないため)。管理者クレデンシャルで上記のように個別に削除するか、`handson-assume-role` に一時的に `ec2:DeleteSubnet` を付与して対応してください。
+#### 2. IAM ロールとインラインポリシーを削除する
 
-続いて、[Vault への AWS 権限付与](#vault-への-aws-権限付与) で作成した IAM ロールと、`HandsonRole` に追加したインラインポリシーを削除します。
+手動のマネジメントコンソールでも削除できるよう、**削除対象の名前を明示** します。以下の名前のものを探して削除してください (IAM 変更権限を持つプロファイルで実行)。
+
+**削除するロール:**
+
+* **`handson-assume-role`** — [Vault への AWS 権限付与](#vault-への-aws-権限付与) で作成した AssumeRole 先の対象ロール。**まるごと削除します。**
+
+**`handson-assume-role` に紐づくインラインポリシー:**
+
+* **`handson-assume-permissions`** — サブネット作成/削除などの許可ポリシー (ロールを削除すれば一緒に消えます)
+
+**`HandsonRole` (EC2 のインスタンスロール) に追加したインラインポリシー 3 つ:**
+
+* **`VaultAwsEc2Auth`** — AWS Auth (ec2 method) 用 (`ec2:DescribeInstances` ほか)
+* **`VaultAssumeSubnetRole`** — `handson-assume-role` を AssumeRole するための許可
+* **`VaultSecretSync`** — Secret Sync の Secrets Manager 操作用
+
+> **`HandsonRole` 本体は削除しないでください。** これは EC2 のコンソールアクセス (SSM) に使っているロールです。ハンズオンで追加した上記 3 つのインラインポリシーだけを外します。
+
+CLI で削除する場合は以下のとおりです (`<...>` の名前は上記のものです)。
 
 ```console
-# 対象ロールのインラインポリシーとロール本体を削除
+# handson-assume-role: インラインポリシーを外してからロールを削除
 $ aws iam delete-role-policy --role-name handson-assume-role --policy-name handson-assume-permissions
 $ aws iam delete-role --role-name handson-assume-role
 
-# HandsonRole に追加したインラインポリシーを削除
-#   (付与時に付けたポリシー名に置き換えてください)
+# HandsonRole に追加した 3 つのインラインポリシーを外す (ロール自体は残す)
 $ aws iam delete-role-policy --role-name HandsonRole --policy-name VaultAwsEc2Auth
 $ aws iam delete-role-policy --role-name HandsonRole --policy-name VaultAssumeSubnetRole
 $ aws iam delete-role-policy --role-name HandsonRole --policy-name VaultSecretSync
 ```
 
-> `HandsonRole` 自体は EC2 のコンソールアクセス (SSM) に使っているため、ロールごと削除せず、ハンズオンで追加したインラインポリシーだけを外すのが安全です。
+> Secret Sync を試した場合は、AWS Secrets Manager 側に `vault/...` という名前のシークレットが作成されています。不要であれば `aws secretsmanager delete-secret` で合わせて削除してください。
 
-### 環境 (EC2 / Vault 本体) の削除
+### EC2 インスタンスの削除
 
-Vault サーバやインスタンスごと破棄する場合は以下を行います。
+最後に、Vault が動いていた **EC2 インスタンスを終了 (terminate)** します。これにより Vault 本体・設定・データ・スナップショット・鍵ファイルを含め、インスタンス内のものはすべて消えます。インスタンスプロファイルの関連付けも自動的に解除されます。
 
 ```console
-# Vault サービスの停止・無効化
-$ sudo systemctl disable --now vault
-
-# Vault とデータの削除 (パッケージとストレージ)
-$ sudo dnf remove -y vault-enterprise
-$ sudo rm -rf /opt/vault/data /etc/vault.d
-
-# スナップショットや鍵ファイルなど手元の成果物も忘れずに
-$ rm -f ~/vault-keys.txt ~/vault-*.snap
+$ aws ec2 terminate-instances --instance-ids <INSTANCE_ID> --region ap-northeast-1
 ```
 
-EC2 インスタンスそのものが不要であれば、最後にインスタンスを終了 (terminate) してください。インスタンスを削除すれば、インスタンスプロファイルの関連付けも解除されます。
-
-> `~/vault-keys.txt` には Unseal Key と Initial Root Token が平文で含まれます。環境を残す場合でも、不要になったら必ず安全に削除してください。
+> Vault の `init` 時に生成した Unseal Key / Root Token を、スクリーンショットや別ファイルなどインスタンス外に控えている場合は、それらも忘れずに破棄してください。
