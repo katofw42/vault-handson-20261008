@@ -334,15 +334,10 @@ path "secret/data/ldap/it" {
 EOF
 ```
 
-<<<<<<< HEAD
-Security グループ向け (security_policy.hcl)：
-```Hashicorp Configuration Language
-=======
-次にSecurity部門用のPolicyファイルを作成します。
+次に Security 部門用の Policy ファイルを作成します。
 
 ```shell
 $ cat > security_policy.hcl <<'EOF'
->>>>>>> main
 # Policy for security people
 
 path "secret/data/ldap" {
