@@ -1187,10 +1187,11 @@ access_key         ASIA2UC3EJWSF43YTZU2
 arn                arn:aws:sts::730335563172:assumed-role/handson-assume-role/vault-root-subnet-role-1791393377-uE1dJZxsiK7bLyDyyuOo
 secret_key         5ruahqxcBQzW/LCt7H2jRaBUcvpt8NpkxIt2TN42
 security_token     IQoJb3JpZ2luX2VjE...(省略)...
+session_token      IQoJb3JpZ2luX2VjE...(省略)...
 ttl                14m59s
 ```
 
-`access_key` が `ASIA` から始まる STS の一時クレデンシャルになっており、`arn` が `assumed-role/handson-assume-role/...` になっていることがわかります。Vault が対象ロールを AssumeRole して払い出した証拠です。
+`security_token` と `session_token` には同じ STS のセッショントークンが入ります (`session_token` は後方互換のために同じ値が返ります)。`access_key` が `ASIA` から始まる STS の一時クレデンシャルになっており、`arn` が `assumed-role/handson-assume-role/...` になっていることがわかります。Vault が対象ロールを AssumeRole して払い出した証拠です。
 
 払い出したクレデンシャルで、対象ロールに許可された操作 (事前作成した VPC へのサブネット作成) が行えることを確認してみましょう。別端末で環境変数にセットして実行します (IAM の反映に数秒かかることがあります)。`<VPC_ID>` は [Vault への AWS 権限付与](#vault-への-aws-権限付与) で対象にした既存 VPC の ID に置き換えてください。
 
@@ -1258,7 +1259,7 @@ $ vault lease revoke aws/creds/subnet-role/<LEASE_ID>
 $ vault lease revoke -prefix -force aws/creds/subnet-role
 Warning! Force-removing leases can cause Vault to become out of sync with
 secret engines!
-All revocation operations queued successfully!
+Success! Force revoked any leases with prefix: aws/creds/subnet-role
 ```
 
 `-prefix` は指定したパス配下の全てのリースを対象にし、`-force` は Vault 側でリースを削除する際に AWS 側の失効に失敗しても強制的に進めるオプションです。これにより、`subnet-role` から発行した全てのクレデンシャルを一括で無効化できます。
