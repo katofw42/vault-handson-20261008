@@ -1293,7 +1293,7 @@ $ vault namespace create workshop
 Key                  Value
 ---                  -----
 custom_metadata      map[]
-id                   abCD12
+id                   KPzCf
 path                 workshop/
 
 $ vault namespace list
@@ -1325,8 +1325,11 @@ $ unset VAULT_NAMESPACE
 ```console
 $ vault policy list
 default
+default-ceiling
 root
 ```
+
+> `default-ceiling` は Vault Enterprise にビルトインされているポリシーです (Agentic IAM の agent-registry 向け)。環境によって一覧に含まれます。本ハンズオンで前の章の認証メソッド (`app-policy` / `ec2-demo` など) を作成済みの場合は、それらもあわせて表示されます。
 
 Policy は Vault のコンフィグレーションと同様`HCL`で記述します。`path`で対象のエンドポイントを、`capabilities`でそのエンドポイントに対する権限を指定します。ここでは例として`kv`と`aws`のエンドポイントを操作できる`demo-policy`を作ってみます。
 
@@ -1349,8 +1352,9 @@ $ vault policy write demo-policy demo-policy.hcl
 Success! Uploaded policy: demo-policy
 
 $ vault policy list           
-demo-policy
 default
+default-ceiling
+demo-policy
 root
 
 $ vault policy read demo-policy
@@ -1386,15 +1390,26 @@ $ export DEMO_TOKEN=hvs.CAESIG...
 
 ```console
 $ VAULT_TOKEN=$DEMO_TOKEN vault kv put kv/myapp password=p@SSW0d
-Success! Data written to: kv/myapp
+== Secret Path ==
+kv/data/myapp
+
+======= Metadata =======
+Key                Value
+---                -----
+created_time       2026-10-07T18:03:40.123456789Z
+custom_metadata    <nil>
+deletion_time      n/a
+destroyed          false
+version            1
 
 $ VAULT_TOKEN=$DEMO_TOKEN vault policy list
-Error making API request.
+Error listing policies: Error making API request.
 
 URL: GET http://127.0.0.1:8200/v1/sys/policies/acl?list=true
 Code: 403. Errors:
 
-* permission denied
+* 1 error occurred:
+	* permission denied
 ```
 
 ポリシーに設定した通り、`kv`への書き込みは成功しますが、権限を与えていない`sys/policies`の操作はエラーになります。`deny by default`というルールのもと、明示的に許可したもの以外は全て`deny`となります。この「必要な権限だけを与える」設計が、Vault を安全に運用する基本です。
@@ -1469,7 +1484,7 @@ The specific error was:
 A trace of the execution for policy "root/break-glass" is available:
 Result: false
 Description: <none>
-Rule "main" (root/break-glass:2:1) = false
+Rule "main" (root/break-glass:3:1) = false
 	* permission denied
 ```
 
