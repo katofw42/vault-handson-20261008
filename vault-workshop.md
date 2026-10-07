@@ -14,8 +14,7 @@
 * ソフトウェア
 	* Vault Enterprise v2.1.1 (本ハンズオンの手順でインストールします)
 	* Terraform
-	* AWS CLI
-	* jq, watch, wget, curl
+
 
 * ライセンス / クレデンシャル
 	* Vault Enterprise ライセンス (`vault.hclic`)
@@ -26,12 +25,37 @@
 本ハンズオンは以下の流れで構成されています。上から順に進めてください。
 
 1. Vault セットアップ
+	- Vault のインストール
+	- Enterprise ライセンスの配置
+	- Vault のコンフィグレーション
+	- Vault の初期化処理 (init / unseal)
+	- seal を試す
+	- Auto Unseal (参考手順)
+	- Audit Device を設定する
+	- 各種シークレットエンジンの有効化
 2. テナントと権限設計
+	- Namespace でテナントを分離する
+	- Policy を作成して割り当てる
+	- Sentinel による制御
+	- Vault への AWS 権限付与
 3. アプリからの利用 (Auth Method)
+	- AWS Auth
+	- AppRole
 4. Static Secret Engine
+	- Vault CLI 経由での読み書き
+	- Vault API 経由での読み書き
+	- バージョニング
+	- Secret Sync による AWS Secrets Manager への反映
 5. AWS Secret Engine
+	- IAM ユーザの動的発行
+	- ポリシーで TTL が異なるアクセスキー発行
+	- 強制 Revoke
 6. Terraform 連携
+	- 動的クレデンシャルによる apply
+	- ephemeral リソースで state にシークレットを残さない
 7. Day2 運用
+	- バックアップ (スナップショットの取得)
+	- リストア (スナップショットからの復元)
 
 ## 目次
 
@@ -290,7 +314,7 @@ HA Enabled              true
 
 `Sealed`が`true`に戻り、再度いかなる操作も受け付けなくなりました。元に戻すには先ほどと同様`vault operator unseal`を 3 回実行します。手元で試した場合は、ここで unseal して先に進んでください。
 
-### Auto Unseal
+### Auto Unseal (参考手順)
 
 本番運用で`unseal`の鍵を 3 人がかりで毎回入力するのは現実的ではありません。そこで Vault はクラウドの鍵管理サービス (AWS KMS など) を使って自動的に`unseal`する **Auto Unseal** に対応しています。Shamir の鍵の代わりにマスターキーをクラウドの鍵で暗号化し、起動時に自動で復号して unseal します。
 
