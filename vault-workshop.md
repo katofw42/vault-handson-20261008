@@ -783,18 +783,24 @@ $ vault auth enable approle
 $ vault write -f auth/approle/role/my-approle policies=app-policy
 $ vault read auth/approle/role/my-approle
 
-Key                      Value
----                      -----
-bind_secret_id           true
-local_secret_ids         false
-period                   0s
-policies                 [app-policy]
-secret_id_num_uses       0
-secret_id_ttl            0s
-token_max_ttl            0s
-token_num_uses           0
-token_ttl                0s
-token_type               default
+Key                        Value
+---                        -----
+alias_metadata             map[]
+bind_secret_id             true
+local_secret_ids           false
+policies                   [app-policy]
+secret_id_bound_cidrs      <nil>
+secret_id_num_uses         0
+secret_id_ttl              0s
+token_bound_cidrs          []
+token_explicit_max_ttl     0s
+token_max_ttl              0s
+token_no_default_policy    false
+token_num_uses             0
+token_period               0s
+token_policies             [app-policy]
+token_ttl                  0s
+token_type                 default
 ```
 
 これで AppRole の作成は完了です。次に`Role ID`を取得します。
@@ -803,7 +809,7 @@ token_type               default
 $ vault read auth/approle/role/my-approle/role-id
 Key        Value
 ---        -----
-role_id    a25b3148-7b95-57bf-bc5d-cb72ffc08e68
+role_id    2db44579-2255-8d2c-331a-40412419c072
 ```
 
 次に`Secret ID`を取得しますが、いくつかの方法があります。
@@ -815,7 +821,9 @@ $ vault write -f auth/approle/role/my-approle/custom-secret-id secret_id=ZeCletl
 Key                   Value
 ---                   -----
 secret_id             ZeCletlb
-secret_id_accessor    c2b12a4a-0fbf-45ce-b135-be2c1d829b06
+secret_id_accessor    7032e201-1ece-c288-d378-903bdc21a0b5
+secret_id_num_uses    0
+secret_id_ttl         0s
 ```
 
 push 型はカスタムの値を指定できますが、Vault 以外のサーバ、アプリやツールなど Secret ID を発行する側に Secret ID を知らせてしまうことになるため、通常使用しません。`pull`と呼ばれる方法が一般的です。
@@ -824,8 +832,10 @@ push 型はカスタムの値を指定できますが、Vault 以外のサーバ
 $ vault write -f auth/approle/role/my-approle/secret-id
 Key                   Value
 ---                   -----
-secret_id             1cef3c1e-feca-99d8-ecd4-7a17ca997919
-secret_id_accessor    f620512c-e9e9-4f84-bbf6-9f4d484ff2bc
+secret_id             4bed29dc-1956-337e-41a8-9708a233a5d7
+secret_id_accessor    0762cc61-cfc9-7021-e50c-1cc70708391f
+secret_id_num_uses    0
+secret_id_ttl         0s
 ```
 
 この場合、クライアントに値を持たせることがなく Secret ID の発行が可能となりよりセキュアです。
@@ -833,14 +843,17 @@ secret_id_accessor    f620512c-e9e9-4f84-bbf6-9f4d484ff2bc
 これらを使って認証し、トークンを取得してみましょう。
 
 ```console
-$ vault write auth/approle/login role_id="a25b3148-7b95-57bf-bc5d-cb72ffc08e68" secret_id="1cef3c1e-feca-99d8-ecd4-7a17ca997919"
+$ vault write auth/approle/login role_id="2db44579-2255-8d2c-331a-40412419c072" secret_id="4bed29dc-1956-337e-41a8-9708a233a5d7"
 Key                     Value
 ---                     -----
-token                   hvs.CAESIF9fDfumDmpGa2NoYB7XD1dl...
+token                   hvs.CAESIL4wRXQFVjU4L9WPqrNfX5XEW5hogPuTFEQkkKOfu4WgG...
+token_accessor          60YewuJwztluACX4ZpR4waFQ
 token_duration          768h
 token_renewable         true
 token_policies          ["app-policy" "default"]
+identity_policies       []
 policies                ["app-policy" "default"]
+token_meta_role_name    my-approle
 ```
 
 AppRole により認証され、`app-policy`の権限を持ったトークンが発行されました。発行されたトークンを使うと、ポリシーで許可された`kv`や`aws/creds`にアクセスできます。
