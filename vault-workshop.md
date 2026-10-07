@@ -45,7 +45,7 @@
 	- [バージョニング](#バージョニング)
 	- [Secret Sync による AWS Secrets Manager への反映](#secret-sync-による-aws-secrets-manager-への反映)
 5. [AWS Secret Engine](#aws-secret-engine)
-	- [IAM ユーザの動的発行](#iam-ユーザの動的発行)
+	- [Assumed Role によるクレデンシャルの動的発行](#assumed-role-によるクレデンシャルの動的発行)
 	- [ポリシーで TTL が異なるアクセスキー発行](#ポリシーで-ttl-が異なるアクセスキー発行)
 	- [強制 Revoke](#強制-revoke)
 6. [テナントと権限設計](#テナントと権限設計)
@@ -553,16 +553,16 @@ Vault に AWS 権限を与える方法は大きく 2 通りです。
 }
 ```
 
-対象ロール (ここでは仮に `vault-ec2-subnet-role` とします) を上記 2 つのポリシーで作成します。お手元の IAM 変更権限を持つプロファイルで実行してください。許可ポリシーを `permissions.json`、信頼ポリシーを `trust.json` に保存しておきます。
+対象ロール (ここでは `handson-assume-role` とします) を上記 2 つのポリシーで作成します。お手元の IAM 変更権限を持つプロファイルで実行してください。許可ポリシーを `permissions.json`、信頼ポリシーを `trust.json` に保存しておきます。
 
 ```console
 $ aws iam create-role \
-    --role-name vault-ec2-subnet-role \
+    --role-name handson-assume-role \
     --assume-role-policy-document file://trust.json
 
 $ aws iam put-role-policy \
-    --role-name vault-ec2-subnet-role \
-    --policy-name vault-ec2-subnet-permissions \
+    --role-name handson-assume-role \
+    --policy-name handson-assume-permissions \
     --policy-document file://permissions.json
 ```
 
@@ -575,13 +575,38 @@ $ aws iam put-role-policy \
         {
             "Effect": "Allow",
             "Action": "sts:AssumeRole",
-            "Resource": "arn:aws:iam::730335563172:role/vault-ec2-subnet-role"
+            "Resource": "arn:aws:iam::730335563172:role/handson-assume-role"
         }
     ]
 }
 ```
 
-これで、Vault は static なアクセスキーを持たずに、インスタンスプロファイルから `vault-ec2-subnet-role` を AssumeRole してシークレット (この例では一時的なクレデンシャル) を払い出せます。この対象ロールの ARN は、[AWS Secret Engine](#aws-secret-engine) の章でロールの `role_arns` として指定します。
+これで、Vault は static なアクセスキーを持たずに、インスタンスプロファイルから `handson-assume-role` を AssumeRole してシークレット (この例では一時的なクレデンシャル) を払い出せます。この対象ロールの ARN は、[AWS Secret Engine](#aws-secret-engine) の章でロールの `role_arns` として指定します。
+
+> なお、[Static Secret Engine](#static-secret-engine) の Secret Sync で AWS Secrets Manager へ同期する場合は、`HandsonRole` 側に Secrets Manager を操作する権限も必要です。以下を追加しておきます。
+>
+> ```json
+> {
+>     "Version": "2012-10-17",
+>     "Statement": [
+>         {
+>             "Sid": "VaultSecretSync",
+>             "Effect": "Allow",
+>             "Action": [
+>                 "secretsmanager:CreateSecret",
+>                 "secretsmanager:UpdateSecret",
+>                 "secretsmanager:PutSecretValue",
+>                 "secretsmanager:TagResource",
+>                 "secretsmanager:DeleteSecret",
+>                 "secretsmanager:DescribeSecret",
+>                 "secretsmanager:ListSecrets",
+>                 "secretsmanager:GetSecretValue"
+>             ],
+>             "Resource": "*"
+>         }
+>     ]
+> }
+> ```
 
 ### 参考リンク
 * [AWS Secret Engine](https://developer.hashicorp.com/vault/docs/secrets/aws)
@@ -801,11 +826,11 @@ secret_id_accessor    f620512c-e9e9-4f84-bbf6-9f4d484ff2bc
 $ vault write auth/approle/login role_id="a25b3148-7b95-57bf-bc5d-cb72ffc08e68" secret_id="1cef3c1e-feca-99d8-ecd4-7a17ca997919"
 Key                     Value
 ---                     -----
-token                   s.nEolH5Pjqf3207KljT9xoamS
+token                   hvs.CAESIF9fDfumDmpGa2NoYB7XD1dl...
 token_duration          768h
 token_renewable         true
-token_policies          ["default" "app-policy"]
-policies                ["default" "app-policy"]
+token_policies          ["app-policy" "default"]
+policies                ["app-policy" "default"]
 ```
 
 AppRole により認証され、`app-policy`の権限を持ったトークンが発行されました。発行されたトークンを使うと、ポリシーで許可された`kv`や`aws/creds`にアクセスできます。
@@ -831,7 +856,19 @@ Vault の最も基本的なユースケースが、静的なシークレット (
 ```console
 $ export VAULT_ADDR="http://127.0.0.1:8200"
 $ vault kv put kv/iam name=kabu password=passwd
-$ vault kv get kv/iam                                            
+$ vault kv get kv/iam
+== Secret Path ==
+kv/data/iam
+
+======= Metadata =======
+Key                Value
+---                -----
+created_time       2026-10-07T17:09:28.123943402Z
+custom_metadata    <nil>
+deletion_time      n/a
+destroyed          false
+version            1
+
 ====== Data ======
 Key         Value
 ---         -----
@@ -839,7 +876,7 @@ name        kabu
 password    passwd
 ```
 
-特定のフィールドだけを取り出すこともできます。アプリのスクリプトからパスワードだけを抜き出したいときなどに便利です。
+KV v2 では、実データの上に`Secret Path`やバージョンなどの`Metadata`が表示されます。特定のフィールドだけを取り出すこともできます。アプリのスクリプトからパスワードだけを抜き出したいときなどに便利です。
 
 ```console
 $ vault kv get -field=password kv/iam
@@ -859,7 +896,7 @@ Vault の CLI は API への HTTPS のアクセスをラップしているため
 
 ```console
 $ vault kv get -output-curl-string kv/iam
-curl -H "X-Vault-Token: $(vault print token)" http://127.0.0.1:8200/v1/kv/data/iam
+curl -H "X-Vault-Request: true" -H "X-Vault-Token: $(vault print token)" http://127.0.0.1:8200/v1/kv/data/iam
 ```
 
 アプリなどのクライアントから Vault の API を呼ぶ時などに、記述方法に迷った時に便利です。実際に API 経由で書き込みと読み出しをしてみましょう。KV v2 では、データを`data`というキーでラップして送る点に注意してください。
@@ -953,14 +990,26 @@ password    passwd-2
 
 Vault に保管した Static Secret を、AWS Secrets Manager など外部のシークレットストアに自動で同期する機能が **Secret Sync** です。Vault を一元的な source of truth としながら、どうしても AWS Secrets Manager を参照する必要があるアプリやマネージドサービスにも値を届けられます。Vault 側でシークレットを更新すると、同期先にも自動で反映されます。
 
-まず、同期先となる AWS Secrets Manager の宛先 (destination) を登録します。Vault が AWS Secrets Manager を操作するためのアクセスキーを指定します。
+Secret Sync は利用前に機能を **アクティベート** する必要があります。まず一度だけ以下を実行します。
 
 ```console
-$ vault write sys/sync/destinations/aws-sm/my-dest \
-    access_key_id=$AWS_ACCESS_KEY_ID \
-    secret_access_key=$AWS_SECRET_ACCESS_KEY \
-    region=ap-northeast-1
-Success! Data written to: sys/sync/destinations/aws-sm/my-dest
+$ vault write -f sys/activation-flags/secrets-sync/activate
+Key            Value
+---            -----
+activated      [secrets-sync]
+unactivated    [enable-scim force-identity-deduplication secrets-import]
+```
+
+次に、同期先となる AWS Secrets Manager の宛先 (destination) を登録します。[Vault への AWS 権限付与](#vault-への-aws-権限付与) のとおり、この EC2 はインスタンスプロファイル (`HandsonRole`) を持っているため、ここでも **静的なアクセスキーは不要** です (リージョンのみ指定)。`HandsonRole` には Secrets Manager を操作する権限 (`secretsmanager:CreateSecret` / `PutSecretValue` / `TagResource` など) を付与しておきます。
+
+```console
+$ vault write sys/sync/destinations/aws-sm/my-dest region=ap-northeast-1
+Key                   Value
+---                   -----
+connection_details    map[region:ap-northeast-1]
+name                  my-dest
+options               map[custom_tags:map[] granularity_level:secret-path secret_name_template:vault/{{ .MountAccessor }}/{{ .SecretPath }}]
+type                  aws-sm
 ```
 
 次に、同期したい KV のシークレットをこの宛先に関連付け (associate) します。
@@ -969,17 +1018,20 @@ Success! Data written to: sys/sync/destinations/aws-sm/my-dest
 $ vault write sys/sync/destinations/aws-sm/my-dest/associations/set \
     mount=kv \
     secret_name=iam
-Key                Value
----                -----
-associated_secrets map[kv_12159ddb/iam:map[...]]
+Key                        Value
+---                        -----
+associated_secrets         map[kv_b8d0d6f4/iam:map[... external_name:vault/kv_b8d0d6f4/iam ... sync_status:SYNCED ...]]
+store_name                 my-dest
+store_type                 aws-sm
+sync_operation_counters    map[SYNCED:1]
 ```
 
-関連付けが完了すると、AWS Secrets Manager 側に対応するシークレットが作成されます。AWS CLI で確認してみましょう。
+`sync_status` が `SYNCED` になれば同期完了です。AWS Secrets Manager 側に対応するシークレットが作成されます。シークレット名は既定で `vault/<MountAccessor>/<SecretPath>` というテンプレートで決まります。AWS CLI で確認してみましょう。
 
 ```console
-$ aws secretsmanager list-secrets --query 'SecretList[].Name'
+$ aws secretsmanager list-secrets --region ap-northeast-1 --query 'SecretList[].Name'
 [
-    "vault/kv/iam"
+    "vault/kv_b8d0d6f4/iam"
 ]
 ```
 
@@ -994,15 +1046,17 @@ Vault 側で`kv/iam`を更新すると、この AWS Secrets Manager のシーク
 
 ## AWS Secret Engine
 
-AWS シークレットエンジンでは IAM ポリシーの定義に基づいた AWS のキーを動的に発行することが可能です。AWS のキー発行のワークフローをシンプルにし、TTL などを設定することでよりセキュアに利用できます。
+AWS シークレットエンジンでは、AWS の権限を Vault 経由で動的に、かつ短命なクレデンシャルとして払い出せます。発行のたびにユニークで有効期限付きのクレデンシャルになるため、長期間有効なキーを配り回す必要がなくなります。
 
 サポートしているクレデンシャルタイプは下記の三つです。
 
-* IAM user (Access Key & Secret Key)
-* Assumed Role
-* Federation Token
+* IAM User — IAM ユーザとアクセスキーをその都度作成・削除する
+* Assumed Role — 既存の IAM ロールを STS で AssumeRole し、一時クレデンシャルを払い出す
+* Federation Token — フェデレーショントークンを払い出す
 
-### IAM ユーザの動的発行
+本ハンズオンでは、[Vault への AWS 権限付与](#vault-への-aws-権限付与) で用意した構成に合わせて **Assumed Role** を使います。Vault は EC2 のインスタンスプロファイル (`HandsonRole`) の権限で対象ロール (ドキュメント上は `handson-assume-role`) を AssumeRole し、その権限スコープの一時クレデンシャルを払い出します。IAM ユーザを都度作成する `iam_user` と違い、`iam:CreateUser` などの強い権限が不要で、権限は AssumeRole 先のロールに集約できるのが利点です。
+
+### Assumed Role によるクレデンシャルの動的発行
 
 [Vault セットアップ](#vault-セットアップ) で`aws`エンジンは有効化済みですが、未実施の場合はここで enable にします。
 
@@ -1011,196 +1065,118 @@ $ export VAULT_ADDR="http://127.0.0.1:8200"
 $ vault secrets enable aws
 ```
 
-次に Vault が AWS の API を実行するために必要な権限を設定します。[Vault への AWS 権限付与](#vault-への-aws-権限付与) で用意したとおり、本ハンズオンでは EC2 のインスタンスプロファイルから AssumeRole する構成を推奨しますが、ここでは挙動を分かりやすくするため、IAM ユーザを発行・削除できる権限を持つアクセスキーを直接登録する例で示します。
-
-```shell
-$ vault write aws/config/root \
-    access_key=************ \
-    secret_key=************ \
-    region=ap-northeast-1
-```
-
-`access_key`, `secret_key`, `region`はご自身の環境に合わせたものに書き換えてください。ここでは必ずしも AWS の Admin ユーザを登録する必要はなく、ロールやユーザを発行できるユーザであれば大丈夫です。
-
-次にロールを登録します。このロールが Vault から払い出されるユーザの権限と紐付きます。ロールは複数登録することが可能です。今回はまずは`credential_type`に`iam_user`を指定しています。
-
-```shell
-$ vault write aws/roles/my-role \
-    credential_type=iam_user \
-    policy_document=-<<EOF
-{
-  "Version": "2012-10-17",
-  "Statement": [
-    {
-      "Effect": "Allow",
-      "Action": "s3:*",
-      "Resource": "arn:aws:s3:::*"
-    }
-  ]
-}
-EOF
-```
-
-別端末を開いて`watch`コマンドでユーザのリストを監視します。
+次に、Vault が AWS を操作するためのクライアント設定を行います。[Vault への AWS 権限付与](#vault-への-aws-権限付与) のとおり、この EC2 はインスタンスプロファイル (`HandsonRole`) を持っているため、`aws/config/root` に **静的なアクセスキーを渡す必要はありません**。リージョンだけ指定すれば、Vault はインスタンスロールの一時クレデンシャルを使って AWS を呼び出します。
 
 ```console
-$ watch -n 1 aws iam list-users
-
-{
-    "Users": [
-        {
-            "UserName": "tykaburagi",
-            "Path": "/",
-            "CreateDate": "2019-06-12T07:13:45Z",
-            "UserId": "****************",
-            "Arn": "****************"
-        }
-    ]
-}
+$ vault write aws/config/root region=ap-northeast-1
+Success! Data written to: aws/config/root
 ```
 
->aws cli にログイン出来ていない場合、以下のコマンドでログインしてください。
->
->```console
->$ aws configure
->AWS Access Key ID [****************]: ****************
->AWS Secret Access Key [****************]: ****************
->Default region name [ap-northeast-1]:
->Default output format [json]:
->```
-
-ロールを使って AWS のキーを発行してみましょう。
+続いて、AssumeRole 先のロールを紐付けた Vault ロールを作成します。`credential_type=assumed_role` を指定し、`role_arns` に [Vault への AWS 権限付与](#vault-への-aws-権限付与) で作成した対象ロールの ARN を指定します。
 
 ```console
-$ vault read aws/creds/my-role
+$ vault write aws/roles/subnet-role \
+    credential_type=assumed_role \
+    role_arns="arn:aws:iam::<ACCOUNT_ID>:role/handson-assume-role"
+Success! Data written to: aws/roles/subnet-role
+```
 
+> `<ACCOUNT_ID>` はご自身の AWS アカウント ID に置き換えてください。この対象ロールは、VPC へのサブネット作成権限など「払い出したい権限」を許可ポリシーに持ち、信頼ポリシーで `HandsonRole` からの AssumeRole を許可している必要があります (詳細は [Vault への AWS 権限付与](#vault-への-aws-権限付与) を参照)。
+
+それでは、このロールを使ってクレデンシャルを発行してみましょう。`ttl` で有効期限を指定できます。
+
+```console
+$ vault read aws/creds/subnet-role ttl=15m
 Key                Value
 ---                -----
-lease_id           aws/creds/my-role/f3e92392-7d9c-09c8-c921-575d62fe80d8
-lease_duration     768h
-lease_renewable    true
-access_key         ************
-secret_key         ************
-security_token     <nil>
+lease_id           aws/creds/subnet-role/XPtUG66uD5wgdTY4MOxHZ6Pt
+lease_duration     14m59s
+lease_renewable    false
+access_key         ASIA2UC3EJWSF43YTZU2
+arn                arn:aws:sts::730335563172:assumed-role/handson-assume-role/vault-root-subnet-role-1791393377-uE1dJZxsiK7bLyDyyuOo
+secret_key         5ruahqxcBQzW/LCt7H2jRaBUcvpt8NpkxIt2TN42
+security_token     IQoJb3JpZ2luX2VjE...(省略)...
+ttl                14m59s
 ```
 
-この`watch`の出力結果を見るとユーザが増えていることがわかります。発行されるユーザ名は`vault-`から始まることに注目してください。`lease_id`はあとで使うのでメモしておいてください。
+`access_key` が `ASIA` から始まる STS の一時クレデンシャルになっており、`arn` が `assumed-role/handson-assume-role/...` になっていることがわかります。Vault が対象ロールを AssumeRole して払い出した証拠です。
 
-```json
-{
-    "Users": [
-        {
-            "UserName": "tykaburagi",
-            "Path": "/",
-            "CreateDate": "2019-06-12T07:13:45Z",
-            "UserId": "****************",
-            "Arn": "****************"
-        },
-        {
-            "UserName": "vault-root-my-role-1566109640-4907",
-            "Path": "/",
-            "CreateDate": "2019-08-18T06:27:24Z",
-            "UserId": "AIDAZLVKZYEN6HOTBA74D",
-            "Arn": "arn:aws:iam::643529556251:user/vault-root-my-role-1566109640-4907"
-        }
-    ]
-}
-```
-
-このユーザを使って動作を確認してみましょう。別の端末で`aws configure`に Vault から払い出されたキーを設定し、以下のコマンドを実行します。
+払い出したクレデンシャルで、対象ロールに許可された操作だけが行えることを確認してみましょう。別端末で環境変数にセットして実行します (IAM の反映に数秒かかることがあります)。
 
 ```console
-$ aws ec2 describe-instances
+$ export AWS_ACCESS_KEY_ID=ASIA2UC3EJWSF43YTZU2
+$ export AWS_SECRET_ACCESS_KEY=5ruahqxcBQzW/LCt7H2jRaBUcvpt8NpkxIt2TN42
+$ export AWS_SESSION_TOKEN=IQoJb3JpZ2luX2VjE...(省略)...
 
-An error occurred (UnauthorizedOperation) when calling the DescribeInstances operation: You are not authorized to perform this operation.
+# 許可されている操作: 対象 VPC の参照は成功する
+$ aws ec2 describe-vpcs --vpc-ids vpc-038685e9d70b60074 --region ap-northeast-1 --query 'Vpcs[].VpcId'
+[
+    "vpc-038685e9d70b60074"
+]
 
-$ aws s3 ls
-2019-08-16 21:41:34 github-image-tkaburagi
-2019-05-26 23:31:14 vault-enterprise-tkaburagi
-2019-03-08 21:37:21 web-terraform-state-tykaburagi
+# 許可されていない操作: DescribeInstances は拒否される
+$ aws ec2 describe-instances --region ap-northeast-1
+An error occurred (UnauthorizedOperation) when calling the DescribeInstances operation: You are not authorized to perform this operation. ... is not authorized to perform: ec2:DescribeInstances ...
 ```
 
-Role に設定した通り S3 に対する操作のみ可能なことがわかります。
+対象ロールの許可ポリシーどおり、VPC の参照はできる一方で、許可していない `DescribeInstances` は拒否されました。Vault が払い出すクレデンシャルの権限が、AssumeRole 先ロールのスコープに正しく閉じていることが確認できます。
+
+> **TTL の注意点:** `assumed_role` の実体は STS の `AssumeRole` であり、STS の仕様上 **最小 TTL は 15 分 (900 秒)** です。`ttl=2m` のように 15 分未満を指定すると `Code: 400` のエラーになります。短命運用でも 15 分が下限となる点に注意してください。
 
 ### ポリシーで TTL が異なるアクセスキー発行
 
-ロールは複数登録できるため、「用途ごとに権限と TTL の異なるキーを使い分ける」運用が可能です。先ほどの`my-role`は長めのデフォルト TTL でしたが、ここでは短命な使い捨てキー用に、別の TTL を持つロールを追加してみます。ロールには`default_sts_ttl`と`max_sts_ttl`で TTL を設定できます。
-
-```shell
-$ vault write aws/roles/my-role-short \
-    credential_type=iam_user \
-    default_sts_ttl=2m \
-    max_sts_ttl=10m \
-    policy_document=-<<EOF
-{
-  "Version": "2012-10-17",
-  "Statement": [
-    {
-      "Effect": "Allow",
-      "Action": "s3:ListBucket",
-      "Resource": "arn:aws:s3:::*"
-    }
-  ]
-}
-EOF
-```
-
-`my-role`は従来通りの TTL でフルの S3 権限を、`my-role-short`は 2 分の短い TTL で`ListBucket`だけを許可するロールです。このように同じエンジンの中でポリシーと TTL を変えたロールを並べ、クライアントや用途に応じて使い分けます。短い TTL のキーを発行してみます。
+ロールは複数登録できるため、「用途ごとに権限と TTL を変えて使い分ける」運用が可能です。ロールには `default_sts_ttl` (発行時のデフォルト TTL) と `max_sts_ttl` (renew できる最大 TTL) を設定できます。ここでは短命運用向けに、デフォルト 15 分・最大 1 時間のロールを追加してみます。
 
 ```console
-$ vault read aws/creds/my-role-short
-
-Key                Value
----                -----
-lease_id           aws/creds/my-role-short/agnda2uyVWKso4E3HoWlPqY8
-lease_duration     2m
-lease_renewable    true
-access_key         ****************
-secret_key         ****************
-security_token     <nil>
+$ vault write aws/roles/subnet-role-short \
+    credential_type=assumed_role \
+    role_arns="arn:aws:iam::<ACCOUNT_ID>:role/handson-assume-role" \
+    default_sts_ttl=15m \
+    max_sts_ttl=1h
+Success! Data written to: aws/roles/subnet-role-short
 ```
 
-`lease_duration`がロールに設定した 2 分になっています。TTL を短くするほど、万が一キーが漏れても有効な時間が限られるため、より安全です。`watch`で見ていると、このユーザは 2 分後に自動で削除されます。
+発行してみると、`lease_duration` がロールに設定した 15 分になります。
+
+```console
+$ vault read aws/creds/subnet-role-short
+Key                Value
+---                -----
+lease_id           aws/creds/subnet-role-short/OWLnwcl0F9onQQ1ER1C3Q3Lk
+lease_duration     14m59s
+access_key         ASIA2UC3EJWS...
+arn                arn:aws:sts::730335563172:assumed-role/handson-assume-role/vault-root-subnet-role-short-...
+...
+```
+
+同じ AssumeRole 先でも、ロールごとに TTL のプロファイルを分けておくことで、「短時間だけ使う用途」と「もう少し長く使う用途」をクライアント側の都合で選べます。TTL を短くするほど、万が一クレデンシャルが漏れても有効な時間が限られるため、より安全です。
 
 ### 強制 Revoke
 
-発行済みのクレデンシャルを即座に無効化したいケースもあります。Revoke にはマニュアルと自動の 2 通りの方法があります。
-
-まずはマニュアルでの実行手順です。`vault read aws/creds/my-role`を実行した際に発行された`lease_id`をコピーしてください。
+発行済みのクレデンシャルを即座に無効化したいケースもあります。発行時の `lease_id` を指定すれば、個別に revoke できます。
 
 ```shell
-$ vault lease revoke aws/creds/my-role/<LEASE_ID>
+$ vault lease revoke aws/creds/subnet-role/<LEASE_ID>
 ```
 
-`watch`の実行結果を見るとユーザが削除されているでしょう。インシデント発生時など、特定のロールから発行した全てのクレデンシャルをまとめて強制的に失効させたい場合は、プレフィックス指定の`-prefix`を使います。
+インシデント発生時など、特定のロールから発行した全てのクレデンシャルをまとめて強制的に失効させたい場合は、プレフィックス指定の `-prefix` を使います。
 
 ```console
-$ vault lease revoke -prefix -force aws/creds/my-role
+$ vault lease revoke -prefix -force aws/creds/subnet-role
+Warning! Force-removing leases can cause Vault to become out of sync with
+secret engines!
 All revocation operations queued successfully!
 ```
 
-`-prefix`は指定したパス配下の全てのリースを対象にし、`-force`は Vault 側でリースを削除する際に AWS 側の削除に失敗しても強制的に進めるオプションです。これにより、`my-role`から発行された全てのアクセスキーを一括で無効化できます。`watch`の出力から、`vault-`で始まるユーザが全て消えていることを確認してください。
+`-prefix` は指定したパス配下の全てのリースを対象にし、`-force` は Vault 側でリースを削除する際に AWS 側の失効に失敗しても強制的に進めるオプションです。これにより、`subnet-role` から発行した全てのクレデンシャルを一括で無効化できます。
 
-次に自動 Revoke です。デフォルトでは TTL が`768h`になっています。これはエンジン全体のデフォルトとして数分にしてみましょう。
+> `assumed_role` で払い出した STS の一時クレデンシャルは、revoke しても STS トークン自体は TTL 満了まで有効なまま、という点に注意してください (STS の仕様で即時失効はできません)。Vault 側のリース管理からは外れるため、`iam_user` タイプのように AWS 上のエンティティ (ユーザ) を即削除する強制力はありません。即時失効が必要な要件では `iam_user` タイプの採用も検討します。
 
-```shell
-$ vault write aws/config/lease lease=2m lease_max=10m
-```
-
-```console
-$ vault read aws/config/lease
-
-Key          Value
----          -----
-lease        2m0s
-lease_max    10m0s
-```
-
-この状態でユーザを発行すると、TTL 経過後に Vault が自動的にユーザを削除します。動的シークレットの TTL と強制 Revoke を組み合わせることで、「使うときだけ発行し、不要になったら即座に消す」というセキュアな運用が実現できます。
+動的シークレットの TTL と revoke を組み合わせることで、「使うときだけ発行し、不要になったら破棄する」というセキュアな運用が実現できます。
 
 ### 参考リンク
-* [AWS Secret Engine](https://www.vaultproject.io/docs/secrets/aws/index.html)
-* [AWS Secret Engine API](https://www.vaultproject.io/api/secret/aws/index.html)
+* [AWS Secret Engine](https://developer.hashicorp.com/vault/docs/secrets/aws)
+* [AWS Secret Engine API](https://developer.hashicorp.com/vault/api-docs/secret/aws)
 * [Lease, Renew, and Revoke](https://developer.hashicorp.com/vault/docs/concepts/lease)
 
 ---
@@ -1530,21 +1506,25 @@ Terraform で AWS にリソースを作る際、通常は長期間有効なア�
 ```hcl
 provider "vault" {}
 
-# AWS Secret Engine からアクセスキーを動的に発行する
+# AWS Secret Engine からクレデンシャルを動的に発行する
+# AWS Secret Engine の章で作成した assumed_role タイプのロール (subnet-role) を利用する
 data "vault_aws_access_credentials" "creds" {
   backend = "aws"
-  role    = "my-role"
+  role    = "subnet-role"
+  type    = "sts"
 }
 
-# 発行された短命なキーで AWS プロバイダを認証する
+# 発行された短命なクレデンシャルで AWS プロバイダを認証する
+# assumed_role は STS の一時クレデンシャルのため session token も渡す
 provider "aws" {
   region     = "ap-northeast-1"
   access_key = data.vault_aws_access_credentials.creds.access_key
   secret_key = data.vault_aws_access_credentials.creds.secret_key
+  token      = data.vault_aws_access_credentials.creds.security_token
 }
 ```
 
-この状態で`apply`を実行すると、Terraform はまず Vault から IAM ユーザを 1 つ発行し、そのキーを使って AWS にリソースを作成します。
+この状態で`apply`を実行すると、Terraform はまず Vault から対象ロールを AssumeRole した一時クレデンシャルを 1 セット発行し、そのクレデンシャルを使って AWS にリソースを作成します。
 
 ```console
 $ export VAULT_ADDR="http://127.0.0.1:8200"
@@ -1558,7 +1538,7 @@ data.vault_aws_access_credentials.creds: Read complete after 6s
 Apply complete! Resources: 1 added, 0 changed, 0 destroyed.
 ```
 
-実行の裏側では、[AWS Secret Engine](#aws-secret-engine) の章で見たのと同じように`vault-`で始まる IAM ユーザが一時的に作られ、`apply`が終わってリースが切れると自動的に削除されます。これにより、Terraform の実行ごとにユニークで短命なクレデンシャルが使われ、長期間有効なキーを一切保持する必要がなくなります。
+実行の裏側では、[AWS Secret Engine](#aws-secret-engine) の章で見たのと同じように、Vault が対象ロールを AssumeRole した STS の一時クレデンシャルが払い出され、`apply`が終わってリースが切れると自動的に失効します。これにより、Terraform の実行ごとにユニークで短命なクレデンシャルが使われ、長期間有効なキーを一切保持する必要がなくなります。
 
 > HCP Terraform / Terraform Enterprise では、ワークスペースと Vault の間に信頼関係を結び、ワークロードアイデンティティで Vault を認証する **Vault-backed dynamic credentials** が利用できます。この場合`VAULT_TOKEN`すら保持する必要がなくなります。
 
