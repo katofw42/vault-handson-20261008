@@ -879,6 +879,18 @@ Vault の最も基本的なユースケースが、静的なシークレット (
 ```console
 $ export VAULT_ADDR="http://127.0.0.1:8200"
 $ vault kv put kv/iam name=kabu password=passwd
+== Secret Path ==
+kv/data/iam
+
+======= Metadata =======
+Key                Value
+---                -----
+created_time       2026-10-07T17:58:56.7543047Z
+custom_metadata    <nil>
+deletion_time      n/a
+destroyed          false
+version            1
+
 $ vault kv get kv/iam
 == Secret Path ==
 kv/data/iam
@@ -886,7 +898,7 @@ kv/data/iam
 ======= Metadata =======
 Key                Value
 ---                -----
-created_time       2026-10-07T17:09:28.123943402Z
+created_time       2026-10-07T17:58:56.7543047Z
 custom_metadata    <nil>
 deletion_time      n/a
 destroyed          false
@@ -931,13 +943,21 @@ $ curl -s \
     -d '{"data":{"name":"kabu","password":"passwd"}}' \
     http://127.0.0.1:8200/v1/kv/data/iam | jq
 {
-  "request_id": "15a27428-e566-186b-3a47-b66c727f5f02",
+  "request_id": "495c24b9-fd45-6644-45af-e3b8b935dfb6",
+  "lease_id": "",
+  "renewable": false,
+  "lease_duration": 0,
   "data": {
-    "created_time": "2026-10-07T02:20:57.871216Z",
+    "created_time": "2026-10-07T17:59:11.678539746Z",
+    "custom_metadata": null,
     "deletion_time": "",
     "destroyed": false,
     "version": 1
-  }
+  },
+  "wrap_info": null,
+  "warnings": null,
+  "auth": null,
+  "mount_type": "kv"
 }
 ```
 
@@ -961,24 +981,48 @@ KV v2 の大きな特徴がバージョニングです。同じキーに対し�
 
 ```console
 $ vault kv put kv/iam name=kabu password=passwd
-Key              Value
----              -----
-created_time     2026-10-07T06:00:44.023139Z
-destroyed        false
-version          1
+== Secret Path ==
+kv/data/iam
+
+======= Metadata =======
+Key                Value
+---                -----
+created_time       2026-10-07T17:59:28.097467405Z
+custom_metadata    <nil>
+deletion_time      n/a
+destroyed          false
+version            1
 
 $ vault kv put kv/iam name=kabu-2 password=passwd
-Key              Value
----              -----
-created_time     2026-10-07T06:08:03.871067Z
-destroyed        false
-version          2
+== Secret Path ==
+kv/data/iam
+
+======= Metadata =======
+Key                Value
+---                -----
+created_time       2026-10-07T17:59:28.172697961Z
+custom_metadata    <nil>
+deletion_time      n/a
+destroyed          false
+version            2
 ```
 
 データが上書きされてバージョン 2 のデータが生成されました。古いバージョンのデータは`-version`オプションを付与することで参照できます。
 
 ```console
 $ vault kv get -version=1 kv/iam
+== Secret Path ==
+kv/data/iam
+
+======= Metadata =======
+Key                Value
+---                -----
+created_time       2026-10-07T17:59:28.097467405Z
+custom_metadata    <nil>
+deletion_time      n/a
+destroyed          false
+version            1
+
 ====== Data ======
 Key         Value
 ---         -----
@@ -997,7 +1041,31 @@ Success! Data written to: kv/destroy/iam
 
 ```console
 $ vault kv patch kv/iam password=passwd-2
+== Secret Path ==
+kv/data/iam
+
+======= Metadata =======
+Key                Value
+---                -----
+created_time       2026-10-07T17:59:28.404613142Z
+custom_metadata    <nil>
+deletion_time      n/a
+destroyed          false
+version            3
+
 $ vault kv get kv/iam
+== Secret Path ==
+kv/data/iam
+
+======= Metadata =======
+Key                Value
+---                -----
+created_time       2026-10-07T17:59:28.404613142Z
+custom_metadata    <nil>
+deletion_time      n/a
+destroyed          false
+version            3
+
 ====== Data ======
 Key         Value
 ---         -----
@@ -1043,7 +1111,7 @@ $ vault write sys/sync/destinations/aws-sm/my-dest/associations/set \
     secret_name=iam
 Key                        Value
 ---                        -----
-associated_secrets         map[kv_b8d0d6f4/iam:map[... external_name:vault/kv_b8d0d6f4/iam ... sync_status:SYNCED ...]]
+associated_secrets         map[kv_e5f087d7/iam:map[accessor:kv_e5f087d7 external_name:vault/kv_e5f087d7/iam last_operation:Write mount:kv secret_name:iam sync_status:SYNCED updated_at:2026-10-07T18:01:02.150313434Z]]
 store_name                 my-dest
 store_type                 aws-sm
 sync_operation_counters    map[SYNCED:1]
@@ -1054,7 +1122,7 @@ sync_operation_counters    map[SYNCED:1]
 ```console
 $ aws secretsmanager list-secrets --region ap-northeast-1 --query 'SecretList[].Name'
 [
-    "vault/kv_b8d0d6f4/iam"
+    "vault/kv_e5f087d7/iam"
 ]
 ```
 
