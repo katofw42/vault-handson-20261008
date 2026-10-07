@@ -2,7 +2,7 @@
 
 [Vault](https://www.vaultproject.io/) は HashiCorp が中心に開発をするシークレット管理ツールです。Vault を利用することで既存の Static なシークレット管理のみならず、クラウド、データベースや SSH などの様々なシークレットを動的に発行することができます。Vault はマルチプラットフォームでかつ全ての機能を HTTP API で提供しているため、環境やクライアントを問わず利用することができます。
 
-本ドキュメントは、Vault を AWS 環境で一通り使い倒すことを目的とした一本道のハンズオンです。Vault のセットアップから始まり、テナントと権限の設計、アプリケーションからの認証、シークレットの読み書き、AWS の動的クレデンシャル発行、Terraform 連携、そして Day2 の運用までを順に扱います。各セクションは前のセクションの状態を引き継ぐ前提で記述しているため、できるだけ順番に進めることをお勧めします。
+本ドキュメントは、Vault を AWS 環境で一通り使い倒すことを目的とした一本道のハンズオンです。Vault のセットアップから始まり、AWS 権限付与の土台づくり、アプリケーションからの認証、シークレットの読み書き、AWS の動的クレデンシャル発行、テナントと権限の設計、Terraform 連携、そして Day2 の運用までを順に扱います。各セクションは前のセクションの状態を引き継ぐ前提で記述しているため、できるだけ順番に進めることをお勧めします。
 
 > このハンズオンは **Amazon Linux 2023** 上の **Vault Enterprise (v2.1.1)** を前提にしています。Namespace や Sentinel、Secret Sync といった Vault Enterprise の機能を利用するため、有効な Enterprise ライセンスが必要です。コマンドや出力例はすべてこの環境で実際に確認したものを掲載しています。
 
@@ -10,6 +10,7 @@
 
 * 環境
 	* Amazon Linux 2023 の動作する環境 (本ハンズオンでは EC2 インスタンスを使用)
+	* EC2 には `HandsonRole` というインスタンスプロファイルを割り当て、コンソールアクセス用に SSM (`AmazonSSMManagedInstanceCore`) を持たせておきます。以降の AWS 権限付与はこのロールを起点にします。
 
 * ソフトウェア
 	* Vault Enterprise v2.1.1 (本ハンズオンの手順でインストールします)
@@ -33,11 +34,8 @@
 	- [Auto Unseal (参考手順)](#auto-unseal-参考手順)
 	- [Audit Device を設定する](#audit-device-を設定する)
 	- [各種シークレットエンジンの有効化](#各種シークレットエンジンの有効化)
-2. [テナントと権限設計](#テナントと権限設計)
-	- [Namespace でテナントを分離する](#namespace-でテナントを分離する)
-	- [Policy を作成して割り当てる](#policy-を作成して割り当てる)
-	- [Sentinel による制御](#sentinel-による制御)
-	- [Vault への AWS 権限付与](#vault-への-aws-権限付与)
+2. [Vault への AWS 権限付与](#vault-への-aws-権限付与)
+	- [実行手順: インスタンスプロファイルから AssumeRole で権限を渡す](#実行手順-インスタンスプロファイルから-assumerole-で権限を渡す)
 3. [アプリからの利用 (Auth Method)](#アプリからの利用-auth-method)
 	- [AWS Auth](#aws-auth)
 	- [AppRole](#approle)
@@ -50,20 +48,25 @@
 	- [IAM ユーザの動的発行](#iam-ユーザの動的発行)
 	- [ポリシーで TTL が異なるアクセスキー発行](#ポリシーで-ttl-が異なるアクセスキー発行)
 	- [強制 Revoke](#強制-revoke)
-6. [Terraform 連携](#terraform-連携)
+6. [テナントと権限設計](#テナントと権限設計)
+	- [Namespace でテナントを分離する](#namespace-でテナントを分離する)
+	- [Policy を作成して割り当てる](#policy-を作成して割り当てる)
+	- [Sentinel による制御](#sentinel-による制御)
+7. [Terraform 連携](#terraform-連携)
 	- [動的クレデンシャルによる apply](#動的クレデンシャルによる-apply)
 	- [ephemeral リソースで state にシークレットを残さない](#ephemeral-リソースで-state-にシークレットを残さない)
-7. [Day2 運用](#day2-運用)
+8. [Day2 運用](#day2-運用)
 	- [バックアップ (スナップショットの取得)](#バックアップ-スナップショットの取得)
 	- [リストア (スナップショットからの復元)](#リストア-スナップショットからの復元)
 
 ## 目次
 
 - [Vault セットアップ](#vault-セットアップ)
-- [テナントと権限設計](#テナントと権限設計)
+- [Vault への AWS 権限付与](#vault-への-aws-権限付与)
 - [アプリからの利用 (Auth Method)](#アプリからの利用-auth-method)
 - [Static Secret Engine](#static-secret-engine)
 - [AWS Secret Engine](#aws-secret-engine)
+- [テナントと権限設計](#テナントと権限設計)
 - [Terraform 連携](#terraform-連携)
 - [Day2 運用](#day2-運用)
 
@@ -440,316 +443,11 @@ sys/               system            system_570ec64b            system endpoints
 
 ---
 
-## テナントと権限設計
+## Vault への AWS 権限付与
 
-Vault を組織で共有する際は、チームや環境ごとにテナントを分離し、それぞれに最低限の権限だけを与える設計が重要です。ここでは Namespace によるテナント分離、Policy による権限定義と割り当て、そして Sentinel によるより高度なガバナンスを扱います。最後に、後続の章で使う AWS 操作用の権限を Vault に付与します。
+この章では、後続の [AWS Secret Engine](#aws-secret-engine) や [Terraform 連携](#terraform-連携) で Vault が AWS を操作するための権限を、先に用意しておきます。Vault 自身が AWS の API を呼び出して IAM ユーザやアクセスキー、一時クレデンシャルを動的に発行するため、その土台となる権限付与をこの段階で済ませておくと、以降の章がスムーズに進みます。
 
-### Namespace でテナントを分離する
-
-> Namespace は **Vault Enterprise / HCP Vault** でのみ利用できる機能です。
-
-Namespace は Vault の中に独立した「仮想の Vault」を作る機能です。各 Namespace は独自のポリシー、認証メソッド、シークレットエンジン、トークンを持ち、互いに干渉しません。これにより 1 つの Vault クラスタを複数チームでセキュアに共有できます。
-
-ここでは`workshop`という Namespace を作ってみます。
-
-```console
-$ export VAULT_ADDR="http://127.0.0.1:8200"
-$ vault namespace create workshop
-Key                  Value
----                  -----
-custom_metadata      map[]
-id                   abCD12
-path                 workshop/
-
-$ vault namespace list
-Keys
-----
-workshop/
-```
-
-作成した Namespace を使うには、`-namespace`オプションか`VAULT_NAMESPACE`環境変数を指定します。以降のコマンドをこの Namespace に対して実行してみましょう。
-
-```console
-$ export VAULT_NAMESPACE=workshop
-$ vault secrets enable -path=kv -version=2 kv
-Success! Enabled the kv secrets engine at: kv/
-```
-
-この`kv`はルート Namespace の`kv`とは完全に別物です。チームごとに Namespace を切ることで、「他チームのシークレットを誤って参照・上書きしてしまう」といった事故を構造的に防げます。本ハンズオンでは以降ルート Namespace で進めるため、一旦この環境変数は外しておきます。
-
-```console
-$ unset VAULT_NAMESPACE
-```
-
-### Policy を作成して割り当てる
-
-ここまで Root Token を利用して様々な操作をしてきましたが、実際の運用では強力な権限を持つ Root Token は保持をせずに必要な時のみ生成します。通常、最低限の権限のユーザを作成し Vault を利用していきます。権限は **Policy** で定義し、トークンや認証ロールに割り当てます。
-
-まず、プリセットされるポリシー一覧を確認してみましょう。ポリシーを管理するエンドポイントは`sys/policy`と`sys/policies`です。`sys`のエンドポイントには[その他にも様々な機能](https://www.vaultproject.io/api/system/index.html)が用意されています。
-
-```console
-$ vault policy list
-default
-root
-```
-
-Policy は Vault のコンフィグレーションと同様`HCL`で記述します。`path`で対象のエンドポイントを、`capabilities`でそのエンドポイントに対する権限を指定します。ここでは後続の章で使う`kv`と`aws`のエンドポイントを操作できるポリシーを作ってみます。
-
-```shell
-$ cd /path/to/vault-workshop
-$ cat > app-policy.hcl <<EOF
-path "kv/*" {
-  capabilities = [ "read", "list", "create", "update", "delete" ]
-}
-
-path "aws/creds/*" {
-  capabilities = [ "read" ]
-}
-EOF
-```
-
-作ったら`vault policy write`のコマンドでポリシーを作成します。ポリシーの作成は Root Token で実施します。
-
-```console
-$ vault policy write app-policy app-policy.hcl
-Success! Uploaded policy: app-policy
-
-$ vault policy list           
-app-policy
-default
-root
-
-$ vault policy read app-policy
-path "kv/*" {
-  capabilities = [ "read", "list", "create", "update", "delete" ]
-}
-
-path "aws/creds/*" {
-  capabilities = [ "read" ]
-}
-```
-
-新しいポリシーができました。このポリシーと紐づけられたトークンは`kv`への読み書きと`aws/creds`からのクレデンシャル発行の権限を与えられます。ではトークンを発行して、割り当ての動作を確認してみます。
-
-```console
-$ vault token create -policy=app-policy 
-Key                  Value
----                  -----
-token                s.bA9M42W41G7tF90REMDCtMeO
-token_accessor       LfQCnqPOJHGqO8TplfSjTNFs
-token_duration       768h
-token_renewable      true
-token_policies       ["default" "app-policy"]
-identity_policies    []
-policies             ["default" "app-policy"]
-```
-
-発行したトークンを環境変数にセットして、権限の範囲を確かめます。
-
-```shell
-$ export APP_TOKEN=s.bA9M42W41G7tF90REMDCtMeO
-```
-
-```console
-$ VAULT_TOKEN=$APP_TOKEN vault kv put kv/myapp password=p@SSW0d
-Success! Data written to: kv/myapp
-
-$ VAULT_TOKEN=$APP_TOKEN vault policy list
-Error making API request.
-
-URL: GET http://127.0.0.1:8200/v1/sys/policies/acl?list=true
-Code: 403. Errors:
-
-* permission denied
-```
-
-ポリシーに設定した通り、`kv`への書き込みは成功しますが、権限を与えていない`sys/policies`の操作はエラーになります。`deny by default`というルールのもと、明示的に許可したもの以外は全て`deny`となります。この「必要な権限だけを与える」設計が、Vault を安全に運用する基本です。
-
-### Sentinel による制御
-
-> Sentinel は **Vault Enterprise / HCP Vault** でのみ利用できる Policy as Code のフレームワークです。
-
-Policy (ACL) が「どのパスにアクセスできるか」を制御するのに対し、Sentinel は「どういう条件のときに操作を許可するか」という、ACL だけでは表現できないロジックベースのガバナンスをコードで記述できます。接続元 IP やトークンの発行時刻、リクエスト内容などを条件にできるため、ゼロトラストやインシデント対応といった Enterprise のセキュリティ要件を Vault 側で強制できます。
-
-Sentinel ポリシーには、評価対象によって 2 種類があります。
-
-* **EGP (Endpoint Governing Policy)** — 特定の **パス** に紐付く。ログインパスなど未認証のパスにも適用できる
-* **RGP (Role Governing Policy)** — 特定の **トークン / Identity エンティティ / グループ** に紐付く
-
-さらに適用の強さに応じて 3 つのモードがあります。
-
-* `advisory` — 違反しても警告を出すだけで操作は通す
-* `soft-mandatory` — 原則ブロックするが、root 権限で上書きできる
-* `hard-mandatory` — 例外なくブロックする
-
-ここでは Enterprise で特に需要の高い 2 つのユースケースを、実際に動かして確認します。1 つはインシデント対応のための **ブレークグラス (一斉トークン失効)**、もう 1 つはネットワーク統制のための **ログイン元 IP の制限** です。
-
-> **補足:** Sentinel の`print()`によるデバッグ出力は、ポリシー評価が **失敗したときだけ** サーバログに出力されます。成功時には出力されない点に注意してください。
-
-#### ユースケース 1: ブレークグラス (一斉トークン失効)
-
-トークンや生成済みシークレットが漏洩した可能性が判明したとき、「ある時刻より前に発行されたトークンを一斉に無効化したい」という要件が生まれます。全トークンを個別に revoke するのは時間がかかり、漏洩していないトークンまで巻き込んでしまいます。Sentinel なら、トークンの発行時刻 (`token.creation_time`) を条件に、カットオフ時刻より前のトークンだけを一括で遮断できます。
-
-まず、検証用に「古いトークン」と、カットオフ時刻をはさんだ「新しいトークン」を用意します。
-
-```console
-$ export VAULT_ADDR="http://127.0.0.1:8200"
-$ OLD_TOKEN=$(vault token create -policy=default -ttl=60m -field=token)   # カットオフ前に発行
-$ CUTOFF=$(date -u +%Y-%m-%dT%H:%M:%SZ)                                   # この時刻を基準にする
-$ NEW_TOKEN=$(vault token create -policy=default -ttl=60m -field=token)   # カットオフ後に発行
-```
-
-次にブレークグラス用の EGP を書きます。`rule when not request.unauthenticated`で認証済みリクエストだけを対象にし、トークンの発行時刻がカットオフより後 (= 漏洩に関与していない) の場合のみ許可します。`<CUTOFF>`は上で取得した時刻に置き換えてください。
-
-```python
-import "time"
-
-main = rule when not request.unauthenticated {
-    time.load(token.creation_time).unix > time.load("<CUTOFF>").unix
-}
-```
-
-全パスに適用したいので、`paths="*"`・`hard-mandatory`で登録します。
-
-```console
-$ vault write sys/policies/egp/break-glass \
-    policy=@break-glass.sentinel \
-    paths="*" \
-    enforcement_level="hard-mandatory"
-Success! Data written to: sys/policies/egp/break-glass
-```
-
-では古いトークンで操作してみます。カットオフより前に発行されているため、拒否されます。
-
-```console
-$ VAULT_TOKEN=$OLD_TOKEN vault token lookup
-Error looking up token: Error making API request.
-
-URL: GET http://127.0.0.1:8200/v1/auth/token/lookup-self
-Code: 403. Errors:
-
-* 2 errors occurred:
-	* egp standard policy "root/break-glass" evaluation resulted in denial.
-The specific error was:
-<nil>
-A trace of the execution for policy "root/break-glass" is available:
-Result: false
-Description: <none>
-Rule "main" (root/break-glass:2:1) = false
-	* permission denied
-```
-
-一方、カットオフより後に発行された新しいトークンは問題なく通ります。
-
-```console
-$ VAULT_TOKEN=$NEW_TOKEN vault token lookup
-Key                 Value
----                 -----
-display_name        token
-policies            [default]
-ttl                 59m
-...
-```
-
-このように、トークンを個別に revoke することなく、発行時刻を境に「疑わしいトークンだけ」を即座に遮断できます。対応が済んだらポリシーを削除して通常運用に戻します。
-
-```console
-$ vault delete sys/policies/egp/break-glass
-Success! Data deleted (if it existed) at: sys/policies/egp/break-glass
-```
-
-#### ユースケース 2: ログイン元 IP を制限する
-
-次はネットワーク統制です。「社内ネットワーク (特定の CIDR) からのログインしか認めない」という要件を、`sockaddr`インポートを使って認証メソッドのログインパスに適用します。ここでは`userpass`認証メソッドで検証します。
-
-まず検証用の認証メソッドとユーザを用意します。
-
-```console
-$ vault auth enable userpass
-Success! Enabled userpass auth method at: userpass/
-
-$ vault write auth/userpass/users/alice password=pass policies=default
-Success! Data written to: auth/userpass/users/alice
-```
-
-次に、許可する CIDR を`10.0.0.0/8`に限定する EGP を書きます。`request.connection.remote_addr` (接続元 IP) がその範囲に含まれるかを`sockaddr.is_contained`で判定し、`rule when`でログインパスのときだけ評価します。
-
-```python
-import "sockaddr"
-import "strings"
-
-# 社内ネットワークとして許可する CIDR
-allowed_cidr = "10.0.0.0/8"
-
-cidrcheck = rule {
-    sockaddr.is_contained(allowed_cidr, request.connection.remote_addr)
-}
-
-main = rule when strings.has_prefix(request.path, "auth/userpass/login") {
-    cidrcheck
-}
-```
-
-ログインパスに紐付けて登録します。
-
-```console
-$ vault write sys/policies/egp/userpass-cidr \
-    policy=@userpass-cidr.sentinel \
-    paths="auth/userpass/login/*" \
-    enforcement_level="hard-mandatory"
-Success! Data written to: sys/policies/egp/userpass-cidr
-```
-
-このハンズオン環境では Vault へローカル (`127.0.0.1`) から接続しているため、許可 CIDR の`10.0.0.0/8`には含まれません。ログインを試すと拒否されます。
-
-```console
-$ vault login -method=userpass username=alice password=pass
-Error authenticating: Error making API request.
-
-URL: PUT http://127.0.0.1:8200/v1/auth/userpass/login/alice
-Code: 400. Errors:
-
-* 2 errors occurred:
-	* egp standard policy "root/userpass-cidr" evaluation resulted in denial.
-The specific error was:
-<nil>
-	* permission denied
-```
-
-逆に、許可 CIDR に自分の接続元を含めれば通ります。`allowed_cidr`を`127.0.0.1/32`に変えて同じパスに上書き登録し、再度ログインしてみましょう。
-
-```console
-$ vault write sys/policies/egp/userpass-cidr \
-    policy=@userpass-cidr-local.sentinel \
-    paths="auth/userpass/login/*" \
-    enforcement_level="hard-mandatory"
-Success! Data written to: sys/policies/egp/userpass-cidr
-
-$ vault login -method=userpass username=alice password=pass
-Success! You are now authenticated. The token information displayed below
-is already stored in the token helper.
-
-Key                    Value
----                    -----
-token                  hvs.CAESI....
-token_policies         ["default"]
-...
-```
-
-同じユーザ・同じ認証情報でも、接続元 IP が許可範囲外ならログイン自体が成立しません。ACL では表現できない「どこからアクセスしているか」という条件を、Sentinel なら認証の段階で強制できます。確認が済んだらポリシーを削除しておきます。
-
-```console
-$ vault delete sys/policies/egp/userpass-cidr
-Success! Data deleted (if it existed) at: sys/policies/egp/userpass-cidr
-```
-
-Sentinel を使うと、このように Policy (ACL) だけでは表現しきれない組織のコンプライアンス要件やインシデント対応のロジックを、Vault 側でコードとして強制できます。
-
-### Vault への AWS 権限付与
-
-後続の AWS Secret Engine や Terraform 連携では、Vault 自身が AWS の API を呼び出して IAM ユーザやアクセスキーを動的に発行します。そのため、Vault に AWS を操作するための権限を与えておく必要があります。
-
-与え方は大きく 2 通りです。
+Vault に AWS 権限を与える方法は大きく 2 通りです。
 
 * Vault が稼働するインスタンスに IAM ロールを付与する (EC2 / ECS などでの推奨)
 * Vault に直接 IAM ユーザのアクセスキーを登録する (手元で試す場合など)
@@ -786,7 +484,7 @@ Sentinel を使うと、このように Policy (ACL) だけでは表現しきれ
 
 `Resource`を`vault-*`に絞ることで、Vault が発行するユーザ (後述の通り`vault-`から始まる名前になります) 以外には影響しないようにしています。このユーザのアクセスキーは [AWS Secret Engine](#aws-secret-engine) の章で Vault に登録します。
 
-#### 実行手順: インスタンスプロファイルから AssumeRole で権限を渡す
+### 実行手順: インスタンスプロファイルから AssumeRole で権限を渡す
 
 このハンズオンでは、より本番に近く、かつアクセスキーを一切保持しない方法を使います。Vault は EC2 上で動いているため、**この EC2 のインスタンスプロファイル (`AmazonSSMManagedInstanceCore`) を使って対象リソース用のロールを AssumeRole し、そのロールの権限でシークレットを払い出す** 構成にします。静的なアクセスキーを Vault に登録する必要がなく、権限は AssumeRole 先のロールに集約できます。
 
@@ -886,10 +584,9 @@ $ aws iam put-role-policy \
 これで、Vault は static なアクセスキーを持たずに、インスタンスプロファイルから `vault-ec2-subnet-role` を AssumeRole してシークレット (この例では一時的なクレデンシャル) を払い出せます。この対象ロールの ARN は、[AWS Secret Engine](#aws-secret-engine) の章でロールの `role_arns` として指定します。
 
 ### 参考リンク
-* [Namespaces](https://developer.hashicorp.com/vault/docs/enterprise/namespaces)
-* [Policies](https://www.vaultproject.io/docs/concepts/policies.html)
-* [Policy API Document](https://www.vaultproject.io/api/system/policy.html)
-* [Sentinel](https://developer.hashicorp.com/vault/docs/enterprise/sentinel)
+* [AWS Secret Engine](https://developer.hashicorp.com/vault/docs/secrets/aws)
+* [AssumeRole でのクレデンシャル発行](https://developer.hashicorp.com/vault/docs/secrets/aws#sts-assumerole)
+* [IAM ロールの信頼ポリシー](https://docs.aws.amazon.com/IAM/latest/UserGuide/id_roles_terms-and-concepts.html)
 
 ---
 
@@ -1033,12 +730,23 @@ ref: [https://learn.hashicorp.com/vault/identity-access-management/iam-authentic
 
 AppRole で認証するためには`Role ID`と`Secret ID`という二つの値が必要で、username と password のようなイメージです。各 AppRole はポリシーに紐付き、AppRole で承認されるとクライアントにポリシーに基づいた権限のトークンが発行されます。
 
-ここでは [テナントと権限設計](#テナントと権限設計) で作成した`app-policy`を再利用します。`approle`を`enable`にし、`app-policy`のポリシーに基づいた AppRole を一つ作成します。
+まず、この AppRole に紐付けるポリシーを用意します。ここでは`kv`を読み書きできる`app-policy`をその場で作成します。
 
 ```console
-$ VAULT_TOKEN=$ROOT_TOKEN vault auth enable approle
-$ VAULT_TOKEN=$ROOT_TOKEN vault write -f auth/approle/role/my-approle policies=app-policy
-$ VAULT_TOKEN=$ROOT_TOKEN vault read auth/approle/role/my-approle
+$ vault policy write app-policy - <<EOF
+path "kv/*" {
+  capabilities = ["create", "read", "update", "delete", "list"]
+}
+EOF
+Success! Uploaded policy: app-policy
+```
+
+`approle`を`enable`にし、`app-policy`のポリシーに基づいた AppRole を一つ作成します。
+
+```console
+$ vault auth enable approle
+$ vault write -f auth/approle/role/my-approle policies=app-policy
+$ vault read auth/approle/role/my-approle
 
 Key                      Value
 ---                      -----
@@ -1057,7 +765,7 @@ token_type               default
 これで AppRole の作成は完了です。次に`Role ID`を取得します。
 
 ```console
-$ VAULT_TOKEN=$ROOT_TOKEN vault read auth/approle/role/my-approle/role-id
+$ vault read auth/approle/role/my-approle/role-id
 Key        Value
 ---        -----
 role_id    a25b3148-7b95-57bf-bc5d-cb72ffc08e68
@@ -1068,7 +776,7 @@ role_id    a25b3148-7b95-57bf-bc5d-cb72ffc08e68
 一つは`push`と呼ばれる方法で、カスタムの値を指定するパターンです。
 
 ```console
-$ VAULT_TOKEN=$ROOT_TOKEN vault write -f auth/approle/role/my-approle/custom-secret-id secret_id=ZeCletlb
+$ vault write -f auth/approle/role/my-approle/custom-secret-id secret_id=ZeCletlb
 Key                   Value
 ---                   -----
 secret_id             ZeCletlb
@@ -1078,7 +786,7 @@ secret_id_accessor    c2b12a4a-0fbf-45ce-b135-be2c1d829b06
 push 型はカスタムの値を指定できますが、Vault 以外のサーバ、アプリやツールなど Secret ID を発行する側に Secret ID を知らせてしまうことになるため、通常使用しません。`pull`と呼ばれる方法が一般的です。
 
 ```console
-$ VAULT_TOKEN=$ROOT_TOKEN vault write -f auth/approle/role/my-approle/secret-id
+$ vault write -f auth/approle/role/my-approle/secret-id
 Key                   Value
 ---                   -----
 secret_id             1cef3c1e-feca-99d8-ecd4-7a17ca997919
@@ -1303,7 +1011,7 @@ $ export VAULT_ADDR="http://127.0.0.1:8200"
 $ vault secrets enable aws
 ```
 
-次に Vault が AWS の API を実行するために必要なキーを登録します。ここで使うのは [テナントと権限設計](#テナントと権限設計) で用意した、IAM ユーザを発行・削除できる権限を持つキーです。
+次に Vault が AWS の API を実行するために必要な権限を設定します。[Vault への AWS 権限付与](#vault-への-aws-権限付与) で用意したとおり、本ハンズオンでは EC2 のインスタンスプロファイルから AssumeRole する構成を推奨しますが、ここでは挙動を分かりやすくするため、IAM ユーザを発行・削除できる権限を持つアクセスキーを直接登録する例で示します。
 
 ```shell
 $ vault write aws/config/root \
@@ -1494,6 +1202,318 @@ lease_max    10m0s
 * [AWS Secret Engine](https://www.vaultproject.io/docs/secrets/aws/index.html)
 * [AWS Secret Engine API](https://www.vaultproject.io/api/secret/aws/index.html)
 * [Lease, Renew, and Revoke](https://developer.hashicorp.com/vault/docs/concepts/lease)
+
+---
+
+## テナントと権限設計
+
+Vault を組織で共有する際は、チームや環境ごとにテナントを分離し、それぞれに最低限の権限だけを与える設計が重要です。ここでは Namespace によるテナント分離、Policy による権限定義と割り当て、そして Sentinel によるより高度なガバナンスを扱います。
+
+### Namespace でテナントを分離する
+
+> Namespace は **Vault Enterprise / HCP Vault** でのみ利用できる機能です。
+
+Namespace は Vault の中に独立した「仮想の Vault」を作る機能です。各 Namespace は独自のポリシー、認証メソッド、シークレットエンジン、トークンを持ち、互いに干渉しません。これにより 1 つの Vault クラスタを複数チームでセキュアに共有できます。
+
+ここでは`workshop`という Namespace を作ってみます。
+
+```console
+$ export VAULT_ADDR="http://127.0.0.1:8200"
+$ vault namespace create workshop
+Key                  Value
+---                  -----
+custom_metadata      map[]
+id                   abCD12
+path                 workshop/
+
+$ vault namespace list
+Keys
+----
+workshop/
+```
+
+作成した Namespace を使うには、`-namespace`オプションか`VAULT_NAMESPACE`環境変数を指定します。以降のコマンドをこの Namespace に対して実行してみましょう。
+
+```console
+$ export VAULT_NAMESPACE=workshop
+$ vault secrets enable -path=kv -version=2 kv
+Success! Enabled the kv secrets engine at: kv/
+```
+
+この`kv`はルート Namespace の`kv`とは完全に別物です。チームごとに Namespace を切ることで、「他チームのシークレットを誤って参照・上書きしてしまう」といった事故を構造的に防げます。本ハンズオンでは以降ルート Namespace で進めるため、一旦この環境変数は外しておきます。
+
+```console
+$ unset VAULT_NAMESPACE
+```
+
+### Policy を作成して割り当てる
+
+ここまで Root Token を利用して様々な操作をしてきましたが、実際の運用では強力な権限を持つ Root Token は保持をせずに必要な時のみ生成します。通常、最低限の権限のユーザを作成し Vault を利用していきます。権限は **Policy** で定義し、トークンや認証ロールに割り当てます。
+
+まず、プリセットされるポリシー一覧を確認してみましょう。ポリシーを管理するエンドポイントは`sys/policy`と`sys/policies`です。`sys`のエンドポイントには[その他にも様々な機能](https://www.vaultproject.io/api/system/index.html)が用意されています。
+
+```console
+$ vault policy list
+default
+root
+```
+
+Policy は Vault のコンフィグレーションと同様`HCL`で記述します。`path`で対象のエンドポイントを、`capabilities`でそのエンドポイントに対する権限を指定します。ここでは例として`kv`と`aws`のエンドポイントを操作できる`demo-policy`を作ってみます。
+
+```shell
+$ cat > demo-policy.hcl <<EOF
+path "kv/*" {
+  capabilities = [ "read", "list", "create", "update", "delete" ]
+}
+
+path "aws/creds/*" {
+  capabilities = [ "read" ]
+}
+EOF
+```
+
+作ったら`vault policy write`のコマンドでポリシーを作成します。ポリシーの作成は Root Token で実施します。
+
+```console
+$ vault policy write demo-policy demo-policy.hcl
+Success! Uploaded policy: demo-policy
+
+$ vault policy list           
+demo-policy
+default
+root
+
+$ vault policy read demo-policy
+path "kv/*" {
+  capabilities = [ "read", "list", "create", "update", "delete" ]
+}
+
+path "aws/creds/*" {
+  capabilities = [ "read" ]
+}
+```
+
+新しいポリシーができました。このポリシーと紐づけられたトークンは`kv`への読み書きと`aws/creds`からのクレデンシャル発行の権限を与えられます。ではトークンを発行して、割り当ての動作を確認してみます。
+
+```console
+$ vault token create -policy=demo-policy 
+Key                  Value
+---                  -----
+token                hvs.CAESIG...
+token_accessor       LfQCnqPOJHGqO8TplfSjTNFs
+token_duration       768h
+token_renewable      true
+token_policies       ["default" "demo-policy"]
+identity_policies    []
+policies             ["default" "demo-policy"]
+```
+
+発行したトークンを環境変数にセットして、権限の範囲を確かめます。
+
+```shell
+$ export DEMO_TOKEN=hvs.CAESIG...
+```
+
+```console
+$ VAULT_TOKEN=$DEMO_TOKEN vault kv put kv/myapp password=p@SSW0d
+Success! Data written to: kv/myapp
+
+$ VAULT_TOKEN=$DEMO_TOKEN vault policy list
+Error making API request.
+
+URL: GET http://127.0.0.1:8200/v1/sys/policies/acl?list=true
+Code: 403. Errors:
+
+* permission denied
+```
+
+ポリシーに設定した通り、`kv`への書き込みは成功しますが、権限を与えていない`sys/policies`の操作はエラーになります。`deny by default`というルールのもと、明示的に許可したもの以外は全て`deny`となります。この「必要な権限だけを与える」設計が、Vault を安全に運用する基本です。
+
+### Sentinel による制御
+
+> Sentinel は **Vault Enterprise / HCP Vault** でのみ利用できる Policy as Code のフレームワークです。
+
+Policy (ACL) が「どのパスにアクセスできるか」を制御するのに対し、Sentinel は「どういう条件のときに操作を許可するか」という、ACL だけでは表現できないロジックベースのガバナンスをコードで記述できます。接続元 IP やトークンの発行時刻、リクエスト内容などを条件にできるため、ゼロトラストやインシデント対応といった Enterprise のセキュリティ要件を Vault 側で強制できます。
+
+Sentinel ポリシーには、評価対象によって 2 種類があります。
+
+* **EGP (Endpoint Governing Policy)** — 特定の **パス** に紐付く。ログインパスなど未認証のパスにも適用できる
+* **RGP (Role Governing Policy)** — 特定の **トークン / Identity エンティティ / グループ** に紐付く
+
+さらに適用の強さに応じて 3 つのモードがあります。
+
+* `advisory` — 違反しても警告を出すだけで操作は通す
+* `soft-mandatory` — 原則ブロックするが、root 権限で上書きできる
+* `hard-mandatory` — 例外なくブロックする
+
+ここでは Enterprise で特に需要の高い 2 つのユースケースを、実際に動かして確認します。1 つはインシデント対応のための **ブレークグラス (一斉トークン失効)**、もう 1 つはネットワーク統制のための **ログイン元 IP の制限** です。
+
+> **補足:** Sentinel の`print()`によるデバッグ出力は、ポリシー評価が **失敗したときだけ** サーバログに出力されます。成功時には出力されない点に注意してください。
+
+#### ユースケース 1: ブレークグラス (一斉トークン失効)
+
+トークンや生成済みシークレットが漏洩した可能性が判明したとき、「ある時刻より前に発行されたトークンを一斉に無効化したい」という要件が生まれます。全トークンを個別に revoke するのは時間がかかり、漏洩していないトークンまで巻き込んでしまいます。Sentinel なら、トークンの発行時刻 (`token.creation_time`) を条件に、カットオフ時刻より前のトークンだけを一括で遮断できます。
+
+まず、検証用に「古いトークン」と、カットオフ時刻をはさんだ「新しいトークン」を用意します。
+
+```console
+$ export VAULT_ADDR="http://127.0.0.1:8200"
+$ OLD_TOKEN=$(vault token create -policy=default -ttl=60m -field=token)   # カットオフ前に発行
+$ CUTOFF=$(date -u +%Y-%m-%dT%H:%M:%SZ)                                   # この時刻を基準にする
+$ NEW_TOKEN=$(vault token create -policy=default -ttl=60m -field=token)   # カットオフ後に発行
+```
+
+次にブレークグラス用の EGP を書きます。`rule when not request.unauthenticated`で認証済みリクエストだけを対象にし、トークンの発行時刻がカットオフより後 (= 漏洩に関与していない) の場合のみ許可します。`<CUTOFF>`は上で取得した時刻に置き換えてください。
+
+```python
+import "time"
+
+main = rule when not request.unauthenticated {
+    time.load(token.creation_time).unix > time.load("<CUTOFF>").unix
+}
+```
+
+全パスに適用したいので、`paths="*"`・`hard-mandatory`で登録します。
+
+```console
+$ vault write sys/policies/egp/break-glass \
+    policy=@break-glass.sentinel \
+    paths="*" \
+    enforcement_level="hard-mandatory"
+Success! Data written to: sys/policies/egp/break-glass
+```
+
+では古いトークンで操作してみます。カットオフより前に発行されているため、拒否されます。
+
+```console
+$ VAULT_TOKEN=$OLD_TOKEN vault token lookup
+Error looking up token: Error making API request.
+
+URL: GET http://127.0.0.1:8200/v1/auth/token/lookup-self
+Code: 403. Errors:
+
+* 2 errors occurred:
+	* egp standard policy "root/break-glass" evaluation resulted in denial.
+The specific error was:
+<nil>
+A trace of the execution for policy "root/break-glass" is available:
+Result: false
+Description: <none>
+Rule "main" (root/break-glass:2:1) = false
+	* permission denied
+```
+
+一方、カットオフより後に発行された新しいトークンは問題なく通ります。
+
+```console
+$ VAULT_TOKEN=$NEW_TOKEN vault token lookup
+Key                 Value
+---                 -----
+display_name        token
+policies            [default]
+ttl                 59m
+...
+```
+
+このように、トークンを個別に revoke することなく、発行時刻を境に「疑わしいトークンだけ」を即座に遮断できます。対応が済んだらポリシーを削除して通常運用に戻します。
+
+```console
+$ vault delete sys/policies/egp/break-glass
+Success! Data deleted (if it existed) at: sys/policies/egp/break-glass
+```
+
+#### ユースケース 2: ログイン元 IP を制限する
+
+次はネットワーク統制です。「社内ネットワーク (特定の CIDR) からのログインしか認めない」という要件を、`sockaddr`インポートを使って認証メソッドのログインパスに適用します。ここでは`userpass`認証メソッドで検証します。
+
+まず検証用の認証メソッドとユーザを用意します。
+
+```console
+$ vault auth enable userpass
+Success! Enabled userpass auth method at: userpass/
+
+$ vault write auth/userpass/users/alice password=pass policies=default
+Success! Data written to: auth/userpass/users/alice
+```
+
+次に、許可する CIDR を`10.0.0.0/8`に限定する EGP を書きます。`request.connection.remote_addr` (接続元 IP) がその範囲に含まれるかを`sockaddr.is_contained`で判定し、`rule when`でログインパスのときだけ評価します。
+
+```python
+import "sockaddr"
+import "strings"
+
+# 社内ネットワークとして許可する CIDR
+allowed_cidr = "10.0.0.0/8"
+
+cidrcheck = rule {
+    sockaddr.is_contained(allowed_cidr, request.connection.remote_addr)
+}
+
+main = rule when strings.has_prefix(request.path, "auth/userpass/login") {
+    cidrcheck
+}
+```
+
+ログインパスに紐付けて登録します。
+
+```console
+$ vault write sys/policies/egp/userpass-cidr \
+    policy=@userpass-cidr.sentinel \
+    paths="auth/userpass/login/*" \
+    enforcement_level="hard-mandatory"
+Success! Data written to: sys/policies/egp/userpass-cidr
+```
+
+このハンズオン環境では Vault へローカル (`127.0.0.1`) から接続しているため、許可 CIDR の`10.0.0.0/8`には含まれません。ログインを試すと拒否されます。
+
+```console
+$ vault login -method=userpass username=alice password=pass
+Error authenticating: Error making API request.
+
+URL: PUT http://127.0.0.1:8200/v1/auth/userpass/login/alice
+Code: 400. Errors:
+
+* 2 errors occurred:
+	* egp standard policy "root/userpass-cidr" evaluation resulted in denial.
+The specific error was:
+<nil>
+	* permission denied
+```
+
+逆に、許可 CIDR に自分の接続元を含めれば通ります。`allowed_cidr`を`127.0.0.1/32`に変えて同じパスに上書き登録し、再度ログインしてみましょう。
+
+```console
+$ vault write sys/policies/egp/userpass-cidr \
+    policy=@userpass-cidr-local.sentinel \
+    paths="auth/userpass/login/*" \
+    enforcement_level="hard-mandatory"
+Success! Data written to: sys/policies/egp/userpass-cidr
+
+$ vault login -method=userpass username=alice password=pass
+Success! You are now authenticated. The token information displayed below
+is already stored in the token helper.
+
+Key                    Value
+---                    -----
+token                  hvs.CAESI....
+token_policies         ["default"]
+...
+```
+
+同じユーザ・同じ認証情報でも、接続元 IP が許可範囲外ならログイン自体が成立しません。ACL では表現できない「どこからアクセスしているか」という条件を、Sentinel なら認証の段階で強制できます。確認が済んだらポリシーを削除しておきます。
+
+```console
+$ vault delete sys/policies/egp/userpass-cidr
+Success! Data deleted (if it existed) at: sys/policies/egp/userpass-cidr
+```
+
+Sentinel を使うと、このように Policy (ACL) だけでは表現しきれない組織のコンプライアンス要件やインシデント対応のロジックを、Vault 側でコードとして強制できます。
+
+### 参考リンク
+* [Namespaces](https://developer.hashicorp.com/vault/docs/enterprise/namespaces)
+* [Policies](https://www.vaultproject.io/docs/concepts/policies.html)
+* [Policy API Document](https://www.vaultproject.io/api/system/policy.html)
+* [Sentinel](https://developer.hashicorp.com/vault/docs/enterprise/sentinel)
 
 ---
 
