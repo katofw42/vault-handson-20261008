@@ -786,6 +786,105 @@ Sentinel を使うと、このように Policy (ACL) だけでは表現しきれ
 
 `Resource`を`vault-*`に絞ることで、Vault が発行するユーザ (後述の通り`vault-`から始まる名前になります) 以外には影響しないようにしています。このユーザのアクセスキーは [AWS Secret Engine](#aws-secret-engine) の章で Vault に登録します。
 
+#### 実行手順: インスタンスプロファイルから AssumeRole で権限を渡す
+
+このハンズオンでは、より本番に近く、かつアクセスキーを一切保持しない方法を使います。Vault は EC2 上で動いているため、**この EC2 のインスタンスプロファイル (`AmazonSSMManagedInstanceCore`) を使って対象リソース用のロールを AssumeRole し、そのロールの権限でシークレットを払い出す** 構成にします。静的なアクセスキーを Vault に登録する必要がなく、権限は AssumeRole 先のロールに集約できます。
+
+構成は以下の 2 つで決まります。
+
+1. **AssumeRole される側のロールの許可ポリシー** — Vault 経由で払い出す操作の実体 (ここでは対象 VPC にサブネットを作成する権限など) を定義します。
+2. **そのロールの信頼ポリシー (trust policy)** — 誰が AssumeRole できるか。ここでは Vault が動く EC2 のインスタンスロール (`AmazonSSMManagedInstanceCore`) を信頼元に指定します。
+
+まず、対象ロールに付与する **許可ポリシー** です。この例では、特定の VPC (`vpc-038685e9d70b60074`) にのみサブネットを作成でき、作成時のタグ付けと可視化のための Describe 系を許可しています。`Resource` と `Condition` を絞ることで、払い出される権限を必要最小限に限定しています。
+
+```json
+{
+    "Version": "2012-10-17",
+    "Statement": [
+        {
+            "Sid": "CreateSubnetOnlyInTargetVPC",
+            "Effect": "Allow",
+            "Action": "ec2:CreateSubnet",
+            "Resource": "arn:aws:ec2:ap-northeast-1:730335563172:vpc/vpc-038685e9d70b60074"
+        },
+        {
+            "Sid": "CreateSubnetResource",
+            "Effect": "Allow",
+            "Action": "ec2:CreateSubnet",
+            "Resource": "arn:aws:ec2:ap-northeast-1:730335563172:subnet/*"
+        },
+        {
+            "Sid": "TagOnlyWhenCreatingSubnet",
+            "Effect": "Allow",
+            "Action": "ec2:CreateTags",
+            "Resource": "arn:aws:ec2:ap-northeast-1:730335563172:subnet/*",
+            "Condition": {
+                "StringEquals": {
+                    "ec2:CreateAction": "CreateSubnet"
+                }
+            }
+        },
+        {
+            "Sid": "ReadOnlyForVisibility",
+            "Effect": "Allow",
+            "Action": [
+                "ec2:DescribeSubnets",
+                "ec2:DescribeVpcs",
+                "ec2:DescribeAvailabilityZones"
+            ],
+            "Resource": "*"
+        }
+    ]
+}
+```
+
+次に、同じ対象ロールの **信頼ポリシー** です。Vault が動く EC2 のインスタンスロール `AmazonSSMManagedInstanceCore` だけが、このロールを AssumeRole できるようにします。これにより「この EC2 上の Vault」以外はこのロールを引き受けられません。
+
+```json
+{
+    "Version": "2012-10-17",
+    "Statement": [
+        {
+            "Effect": "Allow",
+            "Principal": {
+                "AWS": "arn:aws:iam::730335563172:role/AmazonSSMManagedInstanceCore"
+            },
+            "Action": "sts:AssumeRole"
+        }
+    ]
+}
+```
+
+対象ロール (ここでは仮に `vault-ec2-subnet-role` とします) を上記 2 つのポリシーで作成します。お手元の IAM 変更権限を持つプロファイルで実行してください。許可ポリシーを `permissions.json`、信頼ポリシーを `trust.json` に保存しておきます。
+
+```console
+$ aws iam create-role \
+    --role-name vault-ec2-subnet-role \
+    --assume-role-policy-document file://trust.json
+
+$ aws iam put-role-policy \
+    --role-name vault-ec2-subnet-role \
+    --policy-name vault-ec2-subnet-permissions \
+    --policy-document file://permissions.json
+```
+
+あわせて、Vault が動く EC2 のインスタンスロール (`AmazonSSMManagedInstanceCore`) 側にも、この対象ロールを AssumeRole できる権限が必要です。信頼ポリシーと許可ポリシーは両方そろって初めて AssumeRole が成立します。
+
+```json
+{
+    "Version": "2012-10-17",
+    "Statement": [
+        {
+            "Effect": "Allow",
+            "Action": "sts:AssumeRole",
+            "Resource": "arn:aws:iam::730335563172:role/vault-ec2-subnet-role"
+        }
+    ]
+}
+```
+
+これで、Vault は static なアクセスキーを持たずに、インスタンスプロファイルから `vault-ec2-subnet-role` を AssumeRole してシークレット (この例では一時的なクレデンシャル) を払い出せます。この対象ロールの ARN は、[AWS Secret Engine](#aws-secret-engine) の章でロールの `role_arns` として指定します。
+
 ### 参考リンク
 * [Namespaces](https://developer.hashicorp.com/vault/docs/enterprise/namespaces)
 * [Policies](https://www.vaultproject.io/docs/concepts/policies.html)
