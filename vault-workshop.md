@@ -4,20 +4,21 @@
 
 本ドキュメントは、Vault を AWS 環境で一通り使い倒すことを目的とした一本道のハンズオンです。Vault のセットアップから始まり、テナントと権限の設計、アプリケーションからの認証、シークレットの読み書き、AWS の動的クレデンシャル発行、Terraform 連携、そして Day2 の運用までを順に扱います。各セクションは前のセクションの状態を引き継ぐ前提で記述しているため、できるだけ順番に進めることをお勧めします。
 
-> このハンズオンでは Namespace や Sentinel、Secret Sync といった Vault Enterprise / HCP Vault でのみ利用できる機能を扱います。該当するセクションにはその旨を明記していますので、OSS で進める場合は適宜読み替えてください。
+> このハンズオンは **Amazon Linux 2023** 上の **Vault Enterprise (v2.1.1)** を前提にしています。Namespace や Sentinel、Secret Sync といった Vault Enterprise の機能を利用するため、有効な Enterprise ライセンスが必要です。コマンドや出力例はすべてこの環境で実際に確認したものを掲載しています。
 
 ## Pre-requisite
 
 * 環境
-	* macOS or Linux(Ubuntu 推奨)
+	* Amazon Linux 2023 の動作する環境 (本ハンズオンでは EC2 インスタンスを使用)
 
 * ソフトウェア
-	* Vault (Enterprise ライセンスまたは HCP Vault)
+	* Vault Enterprise v2.1.1 (本ハンズオンの手順でインストールします)
 	* Terraform
 	* AWS CLI
 	* jq, watch, wget, curl
 
-* アカウント / クレデンシャル
+* ライセンス / クレデンシャル
+	* Vault Enterprise ライセンス (`vault.hclic`)
 	* AWS (IAM ユーザまたはロールを作成できる権限)
 
 ## お勧めの進め方
@@ -48,119 +49,149 @@
 
 ここではまず Vault のインストールと起動、`init` / `unseal` / `seal` といったライフサイクルの操作、クラウドの鍵管理サービスを使った Auto Unseal、監査ログを記録する Audit Device、そして以降のハンズオンで使うシークレットエンジンの有効化までを扱います。
 
+このハンズオンは **Amazon Linux 2023** 上の **Vault Enterprise (v2.1.1)** を前提にしています。手元の作業端末からは SSH で Amazon Linux 2023 の EC2 インスタンスにログインし、その上で作業を進めてください。
+
 ### Vault のインストール
 
-[こちら](https://www.vaultproject.io/downloads.html)の Web サイトからご自身の OS に合ったものをダウンロードしてください。
-
-```
-wget https://releases.hashicorp.com/vault/1.3.0/vault_1.3.0_linux_amd64.zip
-```
-
-パスを通します。以下は macOS の例ですが、OS にあった手順で`vault`コマンドにパスを通します。
-
-```shell
-unzip vault*.zip
-chmod +x vault
-mv vault /usr/local/bin
-```
-
-新しい端末を立ち上げ、Vault のバージョンを確認します。
+Amazon Linux 2023 では、HashiCorp の公式 yum リポジトリを追加すれば`dnf`一発で Vault Enterprise をインストールできます。まず EC2 にログインしてから、以下を実行します。
 
 ```console
-$ vault -version                                                                       
-Vault v1.1.1+ent ('7a8b0b75453b40e25efdaf67871464d2dcf17a46')
+$ sudo dnf install -y dnf-plugins-core
+$ sudo dnf config-manager --add-repo https://rpm.releases.hashicorp.com/AmazonLinux/hashicorp.repo
+$ sudo dnf install -y vault-enterprise
 ```
 
-`+ent`が付いているものが Enterprise バイナリです。これでインストールは完了です。
+Community 版 (`vault`) ではなく **`vault-enterprise`** パッケージを指定している点に注意してください。特定のバージョンを固定したい場合は`vault-enterprise-2.1.1+ent-1`のようにバージョンを付けて指定します。
+
+インストールが終わったら、バージョンを確認します。
+
+```console
+$ vault version
+Vault v2.1.1+ent (99f338575c1f226671bd863309439596fac1f67e), built 2026-09-15T21:39:40Z
+```
+
+`+ent`が付いているものが Enterprise バイナリです。パッケージインストールでは、設定ファイルや systemd のサービス定義もあわせて配置されます。
+
+* バイナリ: `/usr/bin/vault`
+* 設定ファイル: `/etc/vault.d/vault.hcl`
+* systemd ユニット: `vault.service` (実行ユーザは`vault`)
+
+これでインストールは完了です。
+
+### Enterprise ライセンスの配置
+
+Vault Enterprise を起動するにはライセンスが必要です。ライセンスは文字列 (`02MV4UU4...`のような長い 1 行) で配布されるので、これを Vault が読み込めるファイルとして保存します。パッケージの設定ファイルでも参照されている `/etc/vault.d/vault.hclic` に置くのが標準的です。
+
+配布されたライセンス文字列を、EC2 上で以下のように書き込みます。`<ここにライセンス文字列>` の部分を実際の値に置き換えてください。
+
+```console
+$ sudo tee /etc/vault.d/vault.hclic >/dev/null <<'EOF'
+<ここにライセンス文字列>
+EOF
+$ sudo chown vault:vault /etc/vault.d/vault.hclic
+$ sudo chmod 640 /etc/vault.d/vault.hclic
+```
+
+ライセンスの読み込ませ方には環境変数 (`VAULT_LICENSE` / `VAULT_LICENSE_PATH`) を使う方法もありますが、本ハンズオンでは次のコンフィグで`license_path`を指定する **ライセンスの自動ロード (autoloading)** を使います。配置したライセンスが正しく読み込まれているかは、後ほど起動後に`vault read sys/license/status`で確認します。
 
 ### Vault のコンフィグレーション
 
-まずは Vault のコンフィグレーションを作成し、起動してみます。Vault のコンフィグレーションは`HashiCorp Configuration Language`で記述します。
+次に Vault のコンフィグレーションを作成します。Vault のコンフィグレーションは`HashiCorp Configuration Language`で記述し、パッケージインストールの場合は`/etc/vault.d/vault.hcl`を編集します。ここでは本ハンズオン向けに、以下の内容で上書きします。
 
-デスクトップに任意のフォルダーを作って、以下のファイルを作成します。ファイル名は`vault-local-config.hcl`とします。
+```console
+$ sudo tee /etc/vault.d/vault.hcl >/dev/null <<'EOF'
+ui = true
+disable_mlock = true
 
-```shell 
-$ #for MacOS
-$ mkdir vault-workshop
-$ cd vault-workshop
-
-$ DIR=$(pwd)
-$ cat > vault-local-config.hcl <<EOF
-storage "file" {
-   path = "${DIR}/vaultdata"
+storage "raft" {
+  path    = "/opt/vault/data"
+  node_id = "vault-1"
 }
 
 listener "tcp" {
-  address     = "127.0.0.1:8200"
-  tls_disable = 1
+  address     = "0.0.0.0:8200"
+  tls_disable = true
 }
 
-ui = true
-disable_mlock = true
+license_path = "/etc/vault.d/vault.hclic"
+
+api_addr     = "http://127.0.0.1:8200"
+cluster_addr = "http://127.0.0.1:8201"
 EOF
 ```
 
-ここではストレージ、リスナーと UI の最低限の設定をしています。その他にも[様々な設定](https://www.vaultproject.io/docs/configuration/)が出来ます。
+ポイントを押さえておきましょう。
 
-ストレージのタイプは複数選択できますが、ここではローカルファイルを使います。実際の運用で可用性などを考慮する場合は Integrated Storage (Raft) など HA の機能が盛り込まれたストレージを使うべきです。このコンフィグを使って Vault を起動してみましょう。
+* `storage "raft"` — Vault 推奨の **Integrated Storage (Raft)** を使います。データは`/opt/vault/data`に保存されます (パッケージが用意するディレクトリです)。
+* `disable_mlock = true` — **Vault 1.20 以降、Integrated Storage を使う場合は`disable_mlock`を`true`/`false`で明示的に指定することが必須**になりました。省略すると起動時に`disable_mlock must be configured 'true' or 'false'`というエラーで失敗します。
+* `listener "tcp"` — ハンズオンを簡単にするため TLS を無効 (`tls_disable = true`) にして HTTP で待ち受けます。本番では必ず TLS を有効にしてください。
+* `license_path` — 先ほど配置した Enterprise ライセンスを自動ロードします。
 
->下記のコマンドで起動時に"Error initializing core: Failed to lock memory: cannot allocate memory"のエラーが出る場合は以下の 1 行を vault-local-config.hcl に追記してください。
-> `disable_mlock  = true`
+編集したら systemd サービスとして Vault を起動し、ブート時にも自動起動するよう有効化します。
 
 ```console
-$ vault server -config vault-local-config.hcl
-==> Vault server configuration:
-
-             Api Address: http://127.0.0.1:8200
-                     Cgo: disabled
-         Cluster Address: https://127.0.0.1:8201
-              Listener 1: tcp (addr: "127.0.0.1:8200", cluster address: "127.0.0.1:8201", max_request_duration: "1m30s", max_request_size: "33554432", tls: "disabled")
-               Log Level: info
-                   Mlock: supported: false, enabled: false
-                 Storage: file
-                 Version: Vault v1.1.1+ent
-
-==> Vault server started! Log data will stream in below:
+$ sudo systemctl enable --now vault
+$ systemctl is-active vault
+active
 ```
 
-プロダクションモードで起動しています。`-dev`モードと違い、`Root Token`, `Unseal Key`は出力されません。Vault を利用するまでに`init`と`unseal`という処理が必要です。
-
-### Vault の初期化処理 (init / unseal)
-
-別の端末を立ち上げて以下のコマンドを実行してください。GUI でも同様のことが出来ますが、このハンズオンでは全て CLI を使います。
+起動したら、CLI の接続先を環境変数で指定して状態を確認します。
 
 ```console
 $ export VAULT_ADDR="http://127.0.0.1:8200"
-$ vault operator init > vault-keys
-$ cat vault-keys
-Unseal Key 1: E9wz16Q+6K8sHdV0G1IZNw4/xBC3b0lm28Hz0K/MyfM1
-Unseal Key 2: FmP/bBJqArQ30wPDYS8GNfFUKKgUu141LtVNThrX8YyT
-Unseal Key 3: K2zppWuRaDcCCCqb8NznfDw1Fp4bRXwslRoR4eTd7igz
-Unseal Key 4: uxpETuMXmdwPm4AUcrusWwuHvn52A8XfGXPXwRBGajOF
-Unseal Key 5: e3DwN3SOnSh/boJmCav4Ve8FOD3oSLjwywNwy+P5qrcx
-
-Initial Root Token: s.51du1iIeam79Q5fBRBALVhRB
+$ vault status
+Key                     Value
+---                     -----
+Seal Type               shamir
+Initialized             false
+Sealed                  true
+Total Shares            0
+Threshold               0
+Unseal Progress         0/0
+Unseal Nonce            n/a
+Version                 2.1.1+ent
+Build Date              2026-09-15T21:39:40Z
+Storage Type            raft
+Removed From Cluster    false
+HA Enabled              true
 ```
 
-init の処理をすると、Vault を`unseal`するためのキーと`Initial Root Token`が生成されます。試しにこの状態でログインしてみます。
+`Initialized`が`false`、`Sealed`が`true`になっています。つまり Vault は起動しているが、まだ初期化がされておらず、Seal 状態であるということです。Vault を利用するまでに`init`と`unseal`という処理が必要です。
+
+### Vault の初期化処理 (init / unseal)
+
+まずは初期化です。`-key-shares`で生成する Unseal Key の数、`-key-threshold`で unseal に必要なキーの数を指定します (ここではそれぞれ 5 と 3)。生成されるキーとトークンは二度と再表示されないため、必ずファイルに保存してください。
 
 ```console
-$ vault login                                                                         
-Token (will be hidden):
-Error authenticating: error looking up token: Error making API request.
+$ vault operator init -key-shares=5 -key-threshold=3 > vault-keys.txt
+$ cat vault-keys.txt
+Unseal Key 1: OxRA2iGFNs2UAfsBfTGHfauDGaFJqJYhActQh4tSxW05
+Unseal Key 2: 7ik3chhr73SZsYMa+z50BH16YhkR42h3fviSbWabzldA
+Unseal Key 3: I5xKJ6XnXvWF1leS4hEt3fZzFK8PfeG2eF+v8Z84fPH8
+Unseal Key 4: c+G6Ny66MCoH1XSD8d33vHsR+eSk/OXJsi/ylggxRdon
+Unseal Key 5: NeoD92Of0Wfl9rMlk0lFzq37nQz8aLdTw9JtEzBoaiAO
 
-URL: GET http://127.0.0.1:8200/v1/auth/token/lookup-self
+Initial Root Token: hvs.BhwdXXr0BANd68gmzAEtMAkQ
+```
+
+init の処理をすると、Vault を`unseal`するためのキーと`Initial Root Token`が生成されます。Vault 1.10 以降、トークンは`hvs.`から始まる形式になっています。試しにこの状態でシークレット一覧を見ようとすると、`sealed`のためエラーになります。
+
+```console
+$ vault secrets list
+Error listing secrets engines: Error making API request.
+
+URL: GET http://127.0.0.1:8200/v1/sys/mounts
 Code: 503. Errors:
 
-* error performing token check: Vault is sealed
+* Vault is sealed
 ```
 
-エラーになるはずです。Vault では`sealed`という状態になっているといかに強力な権限のあるトークンを使ったとしてもいかなる操作も受け付けません。`unseal`の処理は`Unseal Key`を使います。
+Vault では`sealed`という状態になっているといかに強力な権限のあるトークンを使ったとしてもいかなる操作も受け付けません。`unseal`の処理は`Unseal Key`を使います。
 
-デフォルトだと 5 つのキーが生成され、そのうち 3 つのキーが集まると`unseal`されます。これは[シャミアの秘密鍵分散法](http://ohta-lab.jp/users/mitsugu/research/SSS/main.html)という仕組みで、1 人に全ての鍵を集中させないための設計です。5 つの`Unseal Key`の任意の 3 つを使ってみましょう。`vault operator unseal`コマンドを 3 度実行します。
+指定した通り 5 つのキーのうち 3 つのキーが集まると`unseal`されます。これは[シャミアの秘密鍵分散法](http://ohta-lab.jp/users/mitsugu/research/SSS/main.html)という仕組みで、1 人に全ての鍵を集中させないための設計です。5 つの`Unseal Key`の任意の 3 つを使ってみましょう。`vault operator unseal`コマンドを 3 度実行します (引数を省略すると対話的にキー入力を求められます)。
 
 ```console
-$ vault operator unseal                                                        
+$ vault operator unseal
 Unseal Key (will be hidden):
 Key                Value
 ---                -----
@@ -171,40 +202,47 @@ Total Shares       5
 Threshold          3
 Unseal Progress    1/3
 Unseal Nonce       5ab14385-6ea9-f09b-4429-b6942c3cc005
-Version            1.1.1+ent
-HA Enabled         false
+Version            2.1.1+ent
+Build Date         2026-09-15T21:39:40Z
+Storage Type       raft
+HA Enabled         true
 
 $ vault operator unseal
 ...(省略)...
 Unseal Progress    2/3
 
 $ vault operator unseal
-Unseal Key (will be hidden):
-Key             Value
----             -----
-Seal Type       shamir
-Initialized     true
-Sealed          false
-Total Shares    5
-Threshold       3
-Version         1.1.1+ent
-Cluster Name    vault-cluster-a1cd882e
-Cluster ID      3f7c2734-ec50-8834-e6c9-7a1c35726d4f
-HA Enabled      false
+Key                     Value
+---                     -----
+Seal Type               shamir
+Initialized             true
+Sealed                  false
+Total Shares            5
+Threshold               3
+Version                 2.1.1+ent
+Build Date              2026-09-15T21:39:40Z
+Storage Type            raft
+Cluster Name            vault-cluster-8b2814c3
+Cluster ID              4808da7d-9205-e82b-3c80-71598f0fb77c
+HA Enabled              true
+HA Mode                 standby
+Active Node Address     <none>
+Raft Committed Index    59
+Raft Applied Index      59
 ``` 
 
 3 回目の出力で`Sealed`が`false`に変化したことがわかるでしょう。この状態で`Initial Root Token`を使ってログインします。
 
 ```console
-$ vault login
-Token (will be hidden):
+$ vault login hvs.BhwdXXr0BANd68gmzAEtMAkQ
 Success! You are now authenticated. The token information displayed below
-is already stored in the token helper.
+is already stored in the token helper. You do NOT need to run "vault login"
+again. Future Vault requests will automatically use this token.
 
 Key                  Value
 ---                  -----
-token                s.51du1iIeam79Q5fBRBALVhRB
-token_accessor       z28eqFezRCtIlaH33OSnhEGt
+token                hvs.BhwdXXr0BANd68gmzAEtMAkQ
+token_accessor       8rtGY0cJ2m0hFqj9r2hqkz1S
 token_duration       ∞
 token_renewable      false
 token_policies       ["root"]
@@ -212,7 +250,18 @@ identity_policies    []
 policies             ["root"]
 ```
 
-これでログインは成功です。以降の章ではこの環境を使ってハンズオンを進めていきます。
+これでログインは成功です。あわせて、[Enterprise ライセンスの配置](#enterprise-ライセンスの配置) で設定したライセンスが正しく自動ロードされているかを確認しておきましょう。
+
+```console
+$ vault read sys/license/status
+Key                   Value
+---                   -----
+autoloaded            map[...features:[... Namespaces Sentinel ... Secrets Sync Automated Snapshots ...] expiration_time:2026-12-17T00:00:00Z ...]
+autoloading_used      true
+persisted_autoload    map[...]
+```
+
+`autoloading_used`が`true`になっており、`features`に`Namespaces`や`Sentinel`、`Secrets Sync`といった本ハンズオンで使う Enterprise 機能が含まれていれば OK です。以降の章ではこの環境を使ってハンズオンを進めていきます。
 
 ### seal を試す
 
@@ -223,16 +272,20 @@ $ vault operator seal
 Success! Vault is sealed.
 
 $ vault status
-Key             Value
----             -----
-Seal Type       shamir
-Initialized     true
-Sealed          true
-Total Shares    5
-Threshold       3
-Unseal Progress 0/3
-Version         1.1.1+ent
-HA Enabled      false
+Key                     Value
+---                     -----
+Seal Type               shamir
+Initialized             true
+Sealed                  true
+Total Shares            5
+Threshold               3
+Unseal Progress         0/3
+Unseal Nonce            n/a
+Version                 2.1.1+ent
+Build Date              2026-09-15T21:39:40Z
+Storage Type            raft
+Removed From Cluster    false
+HA Enabled              true
 ```
 
 `Sealed`が`true`に戻り、再度いかなる操作も受け付けなくなりました。元に戻すには先ほどと同様`vault operator unseal`を 3 回実行します。手元で試した場合は、ここで unseal して先に進んでください。
@@ -260,7 +313,7 @@ Recovery Key 3: c9THb228rV++VUCTkyDjMUw0IG1LyKiaUa3ZmJzyq9oM
 Recovery Key 4: EdhT6w6QKGCxtmuU8HSFbcSA/FXYYSHJ//fRF8UiD2+E
 Recovery Key 5: s0APWYiXE6KMadHbwCbBWuTzL8CCUa5WnZOW5obGjM6k
 
-Initial Root Token: s.Vfj4S1Wx5bFY5xms5eF751pr
+Initial Root Token: hvs.Vfj4S1Wx5bFY5xms5eF751pr
 
 Success! Vault is initialized
 ```
@@ -270,15 +323,18 @@ $ vault status
 Key                      Value
 ---                      -----
 Recovery Seal Type       shamir
+Seal Type                awskms
 Initialized              true
 Sealed                   false
 Total Recovery Shares    5
 Threshold                3
-Version                  1.3.0
+Version                  2.1.1+ent
+Build Date               2026-09-15T21:39:40Z
+Storage Type             raft
 HA Enabled               true
 ```
 
-`vault operator init`で初期化されると、**Auto Unseal**のおかげで自動的に Vault が Unseal 状態になることが確認できます (*Sealed = false*)。`Recovery Key`は`unseal`には使いませんが、Root Token の再生成などの重要な操作で必要になるため大切に保管してください。
+`Seal Type`が`awskms`になり、`vault operator init`で初期化されると **Auto Unseal**のおかげで自動的に Vault が Unseal 状態になることが確認できます (*Sealed = false*)。`Recovery Key`は`unseal`には使いませんが、Root Token の再生成などの重要な操作で必要になるため大切に保管してください。
 
 > AWS KMS を使う場合、Vault が稼働するインスタンスに`kms:Encrypt`, `kms:Decrypt`, `kms:DescribeKey`の権限を持つ IAM ロールを付与しておく必要があります。
 
@@ -337,23 +393,26 @@ Success! Enabled the aws secrets engine at: aws/
 
 ```console
 $ vault secrets list
-Path          Type         Accessor              Description
-----          ----         --------              -----------
-aws/          aws          aws_12345678          n/a
-cubbyhole/    cubbyhole    cubbyhole_e3aa0798    per-token private secret storage
-identity/     identity     identity_86c0240d     identity store
-kv/           kv           kv_12159ddb           n/a
-sys/          system       system_ae51ee57       system endpoints used for control, policy and debugging
+Path               Type              Accessor                   Description
+----               ----              --------                   -----------
+agent-registry/    agent_registry    agent-registry_eeb36c2a    agent registry
+aws/               aws               aws_7dc02279               n/a
+cubbyhole/         cubbyhole         cubbyhole_21473bac         per-token private secret storage
+identity/          identity          identity_b0a1517a          identity store
+kv/                kv                kv_b8d0d6f4                n/a
+sys/               system            system_570ec64b            system endpoints used for control, policy and debugging
 ```
 
 `kv/`と`aws/`がそれぞれ API のエンドポイントとしてマウントされました。以降の章ではこれらのパスを使ってシークレットを扱っていきます。不要になったエンジンは`vault secrets disable <path>`で無効化できます。
 
 ### 参考リンク
-* [アーキテクチャ](https://www.vaultproject.io/docs/internals/architecture.html)
-* [Seal / Unseal](https://www.vaultproject.io/docs/concepts/seal)
+* [Install Vault (Linux パッケージ)](https://developer.hashicorp.com/vault/install)
+* [Enterprise ライセンスの管理](https://developer.hashicorp.com/vault/docs/enterprise/license)
+* [Server Configuration](https://developer.hashicorp.com/vault/docs/configuration)
+* [Seal / Unseal](https://developer.hashicorp.com/vault/docs/concepts/seal)
 * [Auto Unseal with AWS KMS](https://developer.hashicorp.com/vault/docs/configuration/seal/awskms)
+* [Integrated Storage (Raft)](https://developer.hashicorp.com/vault/docs/concepts/integrated-storage)
 * [Audit Devices](https://developer.hashicorp.com/vault/docs/audit)
-* [vault server command](https://www.vaultproject.io/docs/commands/server.html)
 
 ---
 

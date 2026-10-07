@@ -1,0 +1,6 @@
+# 機密情報（コミット禁止）
+private.key
+*.pem
+vault.hclic
+*.hclic
+vault-keys*.txt
