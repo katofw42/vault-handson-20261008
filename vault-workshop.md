@@ -1715,7 +1715,7 @@ $ export VAULT_ADDR="http://127.0.0.1:8200"
 $ vault operator raft snapshot save vault-$(date +%Y%m%d).snap
 
 $ ls -lh vault-*.snap
--rw-------. 1 ec2-user ec2-user 534K Oct  7 17:31 vault-20261007.snap
+-rw-------. 1 ec2-user ec2-user 447K Oct  7 18:15 vault-20261007.snap
 ```
 
 スナップショットの取得にはクラスタ全体を読み出す権限が必要なため、専用のポリシーを用意してトークンを割り当てるのが一般的です。
@@ -1756,17 +1756,17 @@ kv/data/iam
 ======= Metadata =======
 Key                Value
 ---                -----
-created_time       2026-10-07T17:09:28.123943402Z
+created_time       2026-10-07T17:59:28.404613142Z
 custom_metadata    <nil>
 deletion_time      n/a
 destroyed          false
-version            6
+version            3
 
 ====== Data ======
 Key         Value
 ---         -----
-name        kabu
-password    passwd
+name        kabu-2
+password    passwd-2
 ```
 
 取得時点のデータが復元されていることが確認できれば完了です。バックアップは「取得できること」だけでなく「正しくリストアできること」までを定期的に検証して初めて意味を持ちます。半期に一度など、リストアのリハーサルを運用手順に組み込んでおきましょう。
