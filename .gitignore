@@ -4,3 +4,4 @@ private.key
 vault.hclic
 *.hclic
 vault-keys*.txt
+HANDOVER*
