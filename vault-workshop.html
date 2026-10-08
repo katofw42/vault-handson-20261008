@@ -1,0 +1,1902 @@
+<!doctype html>
+<html lang="ja">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>HashiCorp Vault Workshop (AWS ハンズオン)</title>
+<style>
+:root {
+  --bg: #ffffff; --fg: #1f2328; --muted: #59636e; --border: #d1d9e0;
+  --link: #0550ae; --accent: #7b42bc; --accent-bg: #f1e9fb;
+  --code-bg: #0d1117; --code-fg: #e6edf3; --code-muted: #8b949e; --code-bar: #161b22;
+  --inline-bg: #eff1f3; --quote-bg: #f6f8fa;
+  --side-w: 15.5rem;
+}
+@media (prefers-color-scheme: dark) {
+  :root {
+    --bg: #0d1117; --fg: #e6edf3; --muted: #9198a1; --border: #30363d;
+    --link: #79c0ff; --accent: #d2a8ff; --accent-bg: #2a1f3d;
+    --code-bg: #010409; --code-bar: #161b22;
+    --inline-bg: #1c2128; --quote-bg: #161b22;
+  }
+}
+* { box-sizing: border-box; }
+html { scroll-behavior: smooth; }
+@media (prefers-reduced-motion: reduce) { html { scroll-behavior: auto; } }
+body {
+  margin: 0; background: var(--bg); color: var(--fg);
+  font: 16px/1.75 -apple-system, BlinkMacSystemFont, "Hiragino Sans", "Hiragino Kaku Gothic ProN", "Noto Sans JP", Meiryo, sans-serif;
+}
+.layout { display: flex; justify-content: center; gap: 2rem; padding: 0 1.25rem; }
+main { width: 100%; max-width: 52rem; min-width: 0; padding: 2rem 0 6rem; }
+aside.agenda {
+  position: sticky; top: 1rem; align-self: flex-start; order: 2;
+  width: var(--side-w); flex: 0 0 var(--side-w);
+  max-height: calc(100vh - 2rem); overflow-y: auto; margin-top: 2rem;
+  font-size: .875rem; line-height: 1.5;
+}
+.agenda h2 { margin: 0 0 .5rem; font-size: .75rem; letter-spacing: .08em; text-transform: uppercase; color: var(--muted); border: 0; padding: 0; }
+.agenda ol { list-style: none; margin: 0; padding: 0; border-left: 2px solid var(--border); }
+.agenda a {
+  display: flex; gap: .55rem; padding: .4rem .6rem; margin-left: -2px;
+  border-left: 2px solid transparent; color: var(--muted); text-decoration: none;
+}
+.agenda a:hover { color: var(--fg); background: var(--quote-bg); }
+.agenda a.active { color: var(--accent); border-left-color: var(--accent); background: var(--accent-bg); font-weight: 600; }
+.agenda .num { flex: 0 0 1.1rem; text-align: right; font-variant-numeric: tabular-nums; }
+a:focus-visible, button:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+@media (max-width: 62rem) { aside.agenda { display: none; } }
+
+h1, h2, h3 { line-height: 1.35; scroll-margin-top: 1rem; }
+h1 { font-size: 2rem; margin: 0 0 1.5rem; }
+h2 { font-size: 1.6rem; margin: 3rem 0 1rem; padding-bottom: .4rem; border-bottom: 1px solid var(--border); }
+h3 { font-size: 1.2rem; margin: 2.2rem 0 .8rem; }
+h4 { font-size: 1.05rem; margin: 1.8rem 0 .6rem; scroll-margin-top: 1rem; }
+.anchor { margin-left: .4rem; color: var(--muted); text-decoration: none; visibility: hidden; font-weight: 400; }
+:is(h1,h2,h3,h4):hover .anchor, .anchor:focus { visibility: visible; }
+a { color: var(--link); }
+p, ul, ol, blockquote { margin: 0 0 1rem; }
+li { margin: .2rem 0; }
+hr { border: 0; border-top: 1px solid var(--border); margin: 2.5rem 0; }
+img { max-width: 100%; }
+:not(pre) > code {
+  background: var(--inline-bg); padding: .12em .4em; border-radius: 4px;
+  font-size: .88em; overflow-wrap: anywhere;
+}
+code, pre { font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, "Liberation Mono", monospace; }
+blockquote {
+  background: var(--quote-bg); border-left: 4px solid var(--accent);
+  padding: .6rem 1rem; border-radius: 0 6px 6px 0; color: var(--fg);
+}
+blockquote > :last-child { margin-bottom: 0; }
+
+.codeblock { margin: 0 0 1.2rem; border-radius: 8px; overflow: hidden; background: var(--code-bg); border: 1px solid var(--border); }
+.codebar { display: flex; justify-content: space-between; align-items: center; padding: .25rem .5rem .25rem .9rem; background: var(--code-bar); }
+.lang { color: var(--code-muted); font-size: .75rem; font-family: ui-monospace, Menlo, monospace; }
+.copy {
+  font: inherit; font-size: .78rem; line-height: 1.2; padding: .3rem .7rem; cursor: pointer;
+  color: var(--code-fg); background: transparent; border: 1px solid #3d444d; border-radius: 6px;
+}
+.copy:hover { background: #30363d; }
+.copy.done { color: #3fb950; border-color: #3fb950; }
+pre { margin: 0; padding: .9rem 1rem 1rem; overflow-x: auto; color: var(--code-fg); font-size: .86rem; line-height: 1.6; tab-size: 4; }
+pre code { background: none; padding: 0; font-size: inherit; }
+.ps { color: #7ee787; user-select: none; -webkit-user-select: none; }
+.out { color: var(--code-muted); }
+.sr-only { position: absolute; width: 1px; height: 1px; overflow: hidden; clip: rect(0 0 0 0); white-space: nowrap; }
+</style>
+</head>
+<body>
+<div class="layout">
+<main>
+<h1 id="hashicorp-vault-workshop-aws-ハンズオン">HashiCorp Vault Workshop (AWS ハンズオン)<a class="anchor" href="#hashicorp-vault-workshop-aws-ハンズオン" aria-label="このセクションへのリンク">#</a></h1>
+<p><a href="https://www.vaultproject.io/" target="_blank" rel="noopener noreferrer">Vault</a> は HashiCorp が中心に開発をするシークレット管理ツールです。Vault を利用することで既存の Static なシークレット管理のみならず、クラウド、データベースや SSH などの様々なシークレットを動的に発行することができます。Vault はマルチプラットフォームでかつ全ての機能を HTTP API で提供しているため、環境やクライアントを問わず利用することができます。</p>
+<p>本ドキュメントは、Vault を AWS 環境で一通り使い倒すことを目的とした一本道のハンズオンです。Vault のセットアップから始まり、AWS 権限付与の土台づくり、アプリケーションからの認証、シークレットの読み書き、AWS の動的クレデンシャル発行、テナントと権限の設計、Terraform 連携、そして Day2 の運用までを順に扱います。各セクションは前のセクションの状態を引き継ぐ前提で記述しているため、できるだけ順番に進めることをお勧めします。</p>
+<blockquote>
+<p>このハンズオンは <strong>Amazon Linux 2023</strong> 上の <strong>Vault Enterprise (v2.1.2)</strong> を前提にしています。Namespace や Sentinel、Secret Sync といった Vault Enterprise の機能を利用するため、有効な Enterprise ライセンスが必要です。コマンドや出力例はすべてこの環境で実際に確認したものを掲載しています。</p>
+</blockquote>
+<h2 id="pre-requisite">Pre-requisite<a class="anchor" href="#pre-requisite" aria-label="このセクションへのリンク">#</a></h2>
+<ul>
+<li><p>環境</p>
+<ul>
+<li>Amazon Linux 2023 の動作する環境 (本ハンズオンでは EC2 インスタンスを使用)</li>
+<li>EC2 には <code>HandsonRole</code> というインスタンスプロファイルを割り当て、コンソールアクセス用に SSM (<code>AmazonSSMManagedInstanceCore</code>) を持たせておきます。以降の AWS 権限付与はこのロールを起点にします。</li>
+</ul>
+</li>
+<li><p>ソフトウェア</p>
+<ul>
+<li>Vault Enterprise v2.1.2 (本ハンズオンの手順でインストールします)</li>
+<li>Terraform</li>
+</ul>
+</li>
+<li><p>ライセンス / クレデンシャル</p>
+<ul>
+<li>Vault Enterprise ライセンス (<code>vault.hclic</code>)</li>
+<li>AWS (IAM ユーザまたはロールを作成できる権限)</li>
+</ul>
+</li>
+</ul>
+<h2 id="お勧めの進め方">お勧めの進め方<a class="anchor" href="#お勧めの進め方" aria-label="このセクションへのリンク">#</a></h2>
+<p>本ハンズオンは以下の流れで構成されています。上から順に進めてください。</p>
+<ol>
+<li><a href="#vault-セットアップ">Vault セットアップ</a><ul>
+<li><a href="#vault-のインストール">Vault のインストール</a></li>
+<li><a href="#enterprise-ライセンスの配置">Enterprise ライセンスの配置</a></li>
+<li><a href="#vault-のコンフィグレーション">Vault のコンフィグレーション</a></li>
+<li><a href="#vault-の初期化処理-init--unseal">Vault の初期化処理 (init / unseal)</a></li>
+<li><a href="#seal-を試す">seal を試す</a></li>
+<li><a href="#auto-unseal-参考手順">Auto Unseal (参考手順)</a></li>
+<li><a href="#audit-device-を設定する">Audit Device を設定する</a></li>
+<li><a href="#各種シークレットエンジンの有効化">各種シークレットエンジンの有効化</a></li>
+</ul>
+</li>
+<li><a href="#vault-への-aws-権限付与">Vault への AWS 権限付与</a><ul>
+<li><a href="#実行手順-インスタンスプロファイルから-assumerole-で権限を渡す">実行手順: インスタンスプロファイルから AssumeRole で権限を渡す</a></li>
+</ul>
+</li>
+<li><a href="#アプリからの利用-auth-method">アプリからの利用 (Auth Method)</a><ul>
+<li><a href="#aws-auth">AWS Auth</a></li>
+<li><a href="#approle">AppRole</a></li>
+</ul>
+</li>
+<li><a href="#static-secret-engine">Static Secret Engine</a><ul>
+<li><a href="#vault-cli-経由での読み書き">Vault CLI 経由での読み書き</a></li>
+<li><a href="#vault-api-経由での読み書き">Vault API 経由での読み書き</a></li>
+<li><a href="#バージョニング">バージョニング</a></li>
+<li><a href="#secret-sync-による-aws-secrets-manager-への反映">Secret Sync による AWS Secrets Manager への反映</a></li>
+</ul>
+</li>
+<li><a href="#aws-secret-engine">AWS Secret Engine</a><ul>
+<li><a href="#assumed-role-によるクレデンシャルの動的発行">Assumed Role によるクレデンシャルの動的発行</a></li>
+<li><a href="#ポリシーで-ttl-が異なるアクセスキー発行">ポリシーで TTL が異なるアクセスキー発行</a></li>
+<li><a href="#強制-revoke">強制 Revoke</a></li>
+</ul>
+</li>
+<li><a href="#テナントと権限設計">テナントと権限設計</a><ul>
+<li><a href="#namespace-でテナントを分離する">Namespace でテナントを分離する</a></li>
+<li><a href="#policy-を作成して割り当てる">Policy を作成して割り当てる</a></li>
+<li><a href="#sentinel-による制御">Sentinel による制御</a></li>
+</ul>
+</li>
+<li><a href="#terraform-連携">Terraform 連携</a><ul>
+<li><a href="#動的クレデンシャルによる-apply">動的クレデンシャルによる apply</a></li>
+</ul>
+</li>
+<li><a href="#day2-運用">Day2 運用</a><ul>
+<li><a href="#バックアップ-スナップショットの取得">バックアップ (スナップショットの取得)</a></li>
+<li><a href="#リストア-スナップショットからの復元">リストア (スナップショットからの復元)</a></li>
+</ul>
+</li>
+<li><a href="#クリーンアップ-削除手順">クリーンアップ (削除手順)</a><ul>
+<li><a href="#aws-側の後片付け">AWS 側の後片付け</a></li>
+<li><a href="#ec2-インスタンスの削除">EC2 インスタンスの削除</a></li>
+</ul>
+</li>
+</ol>
+<hr>
+<h2 id="vault-セットアップ">Vault セットアップ<a class="anchor" href="#vault-セットアップ" aria-label="このセクションへのリンク">#</a></h2>
+<p>ここではまず Vault のインストールと起動、<code>init</code> / <code>unseal</code> / <code>seal</code> といったライフサイクルの操作、クラウドの鍵管理サービスを使った Auto Unseal、監査ログを記録する Audit Device、そして以降のハンズオンで使うシークレットエンジンの有効化までを扱います。</p>
+<p>このハンズオンは <strong>Amazon Linux 2023</strong> 上の <strong>Vault Enterprise (v2.1.2)</strong> を前提にしています。手元の作業端末からは SSH で Amazon Linux 2023 の EC2 インスタンスにログインし、その上で作業を進めてください。</p>
+<h3 id="vault-のインストール">Vault のインストール<a class="anchor" href="#vault-のインストール" aria-label="このセクションへのリンク">#</a></h3>
+<p>Amazon Linux 2023 では、HashiCorp の公式 yum リポジトリを追加すれば<code>dnf</code>一発で Vault Enterprise をインストールできます。まず EC2 にログインしてから、以下を実行します。</p>
+<div class="codeblock"><div class="codebar"><span class="lang">console</span><button type="button" class="copy" data-copy="sudo dnf install -y dnf-plugins-core
+sudo dnf config-manager --add-repo https://rpm.releases.hashicorp.com/AmazonLinux/hashicorp.repo
+sudo dnf install -y vault-enterprise" aria-label="コマンドのみコピー">コマンドのみコピー</button></div><pre><code><span class="ps" aria-hidden="true">$ </span>sudo dnf install -y dnf-plugins-core
+<span class="ps" aria-hidden="true">$ </span>sudo dnf config-manager --add-repo https://rpm.releases.hashicorp.com/AmazonLinux/hashicorp.repo
+<span class="ps" aria-hidden="true">$ </span>sudo dnf install -y vault-enterprise</code></pre></div>
+<p>Community 版 (<code>vault</code>) ではなく <strong><code>vault-enterprise</code></strong> パッケージを指定している点に注意してください。特定のバージョンを固定したい場合は<code>vault-enterprise-2.1.2+ent-1</code>のようにバージョンを付けて指定します。</p>
+<p>インストールが終わったら、バージョンを確認します。</p>
+<div class="codeblock"><div class="codebar"><span class="lang">console</span><button type="button" class="copy" data-copy="vault version" aria-label="コマンドのみコピー">コマンドのみコピー</button></div><pre><code><span class="ps" aria-hidden="true">$ </span>vault version
+<span class="out">Vault v2.1.2+ent (8ee5bcac416a4b1020c4c64027690db129456746), built 2026-10-06T15:32:01Z</span></code></pre></div>
+<p><code>+ent</code>が付いているものが Enterprise バイナリです。パッケージインストールでは、設定ファイルや systemd のサービス定義もあわせて配置されます。</p>
+<ul>
+<li>バイナリ: <code>/usr/bin/vault</code></li>
+<li>設定ファイル: <code>/etc/vault.d/vault.hcl</code></li>
+<li>systemd ユニット: <code>vault.service</code> (実行ユーザは<code>vault</code>)</li>
+</ul>
+<p>これでインストールは完了です。</p>
+<h3 id="enterprise-ライセンスの配置">Enterprise ライセンスの配置<a class="anchor" href="#enterprise-ライセンスの配置" aria-label="このセクションへのリンク">#</a></h3>
+<p>Vault Enterprise を起動するにはライセンスが必要です。ライセンスは文字列 (<code>02MV4UU4...</code>のような長い 1 行) で配布されるので、これを Vault が読み込めるファイルとして保存します。パッケージの設定ファイルでも参照されている <code>/etc/vault.d/vault.hclic</code> に置くのが標準的です。</p>
+<p>配布されたライセンス文字列を、EC2 上で以下のように書き込みます。<code>&lt;ここにライセンス文字列&gt;</code> の部分を実際の値に置き換えてください。</p>
+<div class="codeblock"><div class="codebar"><span class="lang">console</span><button type="button" class="copy" data-copy="sudo tee /etc/vault.d/vault.hclic &gt;/dev/null &lt;&lt;'EOF'
+&lt;ここにライセンス文字列&gt;
+EOF
+sudo chown vault:vault /etc/vault.d/vault.hclic
+sudo chmod 640 /etc/vault.d/vault.hclic" aria-label="コマンドのみコピー">コマンドのみコピー</button></div><pre><code><span class="ps" aria-hidden="true">$ </span>sudo tee /etc/vault.d/vault.hclic &gt;/dev/null &lt;&lt;'EOF'
+&lt;ここにライセンス文字列&gt;
+EOF
+<span class="ps" aria-hidden="true">$ </span>sudo chown vault:vault /etc/vault.d/vault.hclic
+<span class="ps" aria-hidden="true">$ </span>sudo chmod 640 /etc/vault.d/vault.hclic</code></pre></div>
+<p>ライセンスの読み込ませ方には環境変数 (<code>VAULT_LICENSE</code> / <code>VAULT_LICENSE_PATH</code>) を使う方法もありますが、本ハンズオンでは次のコンフィグで<code>license_path</code>を指定する <strong>ライセンスの自動ロード (autoloading)</strong> を使います。配置したライセンスが正しく読み込まれているかは、後ほど起動後に<code>vault read sys/license/status</code>で確認します。</p>
+<h3 id="vault-のコンフィグレーション">Vault のコンフィグレーション<a class="anchor" href="#vault-のコンフィグレーション" aria-label="このセクションへのリンク">#</a></h3>
+<p>次に Vault のコンフィグレーションを作成します。Vault のコンフィグレーションは<code>HashiCorp Configuration Language</code>で記述し、パッケージインストールの場合は<code>/etc/vault.d/vault.hcl</code>を編集します。ここでは本ハンズオン向けに、以下の内容で上書きします。</p>
+<div class="codeblock"><div class="codebar"><span class="lang">console</span><button type="button" class="copy" data-copy="sudo tee /etc/vault.d/vault.hcl &gt;/dev/null &lt;&lt;'EOF'
+ui = true
+disable_mlock = true
+
+storage &quot;raft&quot; {
+  path    = &quot;/opt/vault/data&quot;
+  node_id = &quot;vault-1&quot;
+}
+
+listener &quot;tcp&quot; {
+  address     = &quot;0.0.0.0:8200&quot;
+  tls_disable = true
+}
+
+license_path = &quot;/etc/vault.d/vault.hclic&quot;
+
+api_addr     = &quot;http://127.0.0.1:8200&quot;
+cluster_addr = &quot;http://127.0.0.1:8201&quot;
+EOF" aria-label="コマンドのみコピー">コマンドのみコピー</button></div><pre><code><span class="ps" aria-hidden="true">$ </span>sudo tee /etc/vault.d/vault.hcl &gt;/dev/null &lt;&lt;'EOF'
+ui = true
+disable_mlock = true
+
+storage &quot;raft&quot; {
+  path    = &quot;/opt/vault/data&quot;
+  node_id = &quot;vault-1&quot;
+}
+
+listener &quot;tcp&quot; {
+  address     = &quot;0.0.0.0:8200&quot;
+  tls_disable = true
+}
+
+license_path = &quot;/etc/vault.d/vault.hclic&quot;
+
+api_addr     = &quot;http://127.0.0.1:8200&quot;
+cluster_addr = &quot;http://127.0.0.1:8201&quot;
+EOF</code></pre></div>
+<p>ポイントを押さえておきましょう。</p>
+<ul>
+<li><code>storage &quot;raft&quot;</code> — Vault 推奨の <strong>Integrated Storage (Raft)</strong> を使います。データは<code>/opt/vault/data</code>に保存されます (パッケージが用意するディレクトリです)。</li>
+<li><code>disable_mlock = true</code> — <strong>Vault 1.20 以降、Integrated Storage を使う場合は<code>disable_mlock</code>を<code>true</code>/<code>false</code>で明示的に指定することが必須</strong>になりました。省略すると起動時に<code>disable_mlock must be configured &#39;true&#39; or &#39;false&#39;</code>というエラーで失敗します。</li>
+<li><code>listener &quot;tcp&quot;</code> — ハンズオンを簡単にするため TLS を無効 (<code>tls_disable = true</code>) にして HTTP で待ち受けます。本番では必ず TLS を有効にしてください。</li>
+<li><code>license_path</code> — 先ほど配置した Enterprise ライセンスを自動ロードします。</li>
+</ul>
+<p>編集したら systemd サービスとして Vault を起動し、ブート時にも自動起動するよう有効化します。</p>
+<div class="codeblock"><div class="codebar"><span class="lang">console</span><button type="button" class="copy" data-copy="sudo systemctl enable --now vault
+systemctl is-active vault" aria-label="コマンドのみコピー">コマンドのみコピー</button></div><pre><code><span class="ps" aria-hidden="true">$ </span>sudo systemctl enable --now vault
+<span class="ps" aria-hidden="true">$ </span>systemctl is-active vault
+<span class="out">active</span></code></pre></div>
+<p>起動したら、CLI の接続先を環境変数で指定して状態を確認します。</p>
+<div class="codeblock"><div class="codebar"><span class="lang">console</span><button type="button" class="copy" data-copy="export VAULT_ADDR=&quot;http://127.0.0.1:8200&quot;
+vault status" aria-label="コマンドのみコピー">コマンドのみコピー</button></div><pre><code><span class="ps" aria-hidden="true">$ </span>export VAULT_ADDR=&quot;http://127.0.0.1:8200&quot;
+<span class="ps" aria-hidden="true">$ </span>vault status
+<span class="out">Key                     Value</span>
+<span class="out">---                     -----</span>
+<span class="out">Seal Type               shamir</span>
+<span class="out">Initialized             false</span>
+<span class="out">Sealed                  true</span>
+<span class="out">Total Shares            0</span>
+<span class="out">Threshold               0</span>
+<span class="out">Unseal Progress         0/0</span>
+<span class="out">Unseal Nonce            n/a</span>
+<span class="out">Version                 2.1.2+ent</span>
+<span class="out">Build Date              2026-10-06T15:32:01Z</span>
+<span class="out">Storage Type            raft</span>
+<span class="out">Removed From Cluster    false</span>
+<span class="out">HA Enabled              true</span></code></pre></div>
+<p><code>Initialized</code>が<code>false</code>、<code>Sealed</code>が<code>true</code>になっています。つまり Vault は起動しているが、まだ初期化がされておらず、Seal 状態であるということです。Vault を利用するまでに<code>init</code>と<code>unseal</code>という処理が必要です。</p>
+<h3 id="vault-の初期化処理-init--unseal">Vault の初期化処理 (init / unseal)<a class="anchor" href="#vault-の初期化処理-init--unseal" aria-label="このセクションへのリンク">#</a></h3>
+<p>まずは初期化です。<code>-key-shares</code>で生成する Unseal Key の数、<code>-key-threshold</code>で unseal に必要なキーの数を指定します (ここではそれぞれ 5 と 3)。生成されるキーとトークンは二度と再表示されないため、必ずファイルに保存してください。</p>
+<div class="codeblock"><div class="codebar"><span class="lang">console</span><button type="button" class="copy" data-copy="vault operator init -key-shares=5 -key-threshold=3 &gt; vault-keys.txt
+cat vault-keys.txt" aria-label="コマンドのみコピー">コマンドのみコピー</button></div><pre><code><span class="ps" aria-hidden="true">$ </span>vault operator init -key-shares=5 -key-threshold=3 &gt; vault-keys.txt
+<span class="ps" aria-hidden="true">$ </span>cat vault-keys.txt
+<span class="out">Unseal Key 1: OxRA2iGFNs2UAfsBfTGHfauDGaFJqJYhActQh4tSxW05</span>
+<span class="out">Unseal Key 2: 7ik3chhr73SZsYMa+z50BH16YhkR42h3fviSbWabzldA</span>
+<span class="out">Unseal Key 3: I5xKJ6XnXvWF1leS4hEt3fZzFK8PfeG2eF+v8Z84fPH8</span>
+<span class="out">Unseal Key 4: c+G6Ny66MCoH1XSD8d33vHsR+eSk/OXJsi/ylggxRdon</span>
+<span class="out">Unseal Key 5: NeoD92Of0Wfl9rMlk0lFzq37nQz8aLdTw9JtEzBoaiAO</span>
+
+<span class="out">Initial Root Token: hvs.BhwdXXr0BANd68gmzAEtMAkQ</span></code></pre></div>
+<p>init の処理をすると、Vault を<code>unseal</code>するためのキーと<code>Initial Root Token</code>が生成されます。Vault 1.10 以降、トークンは<code>hvs.</code>から始まる形式になっています。試しにこの状態でシークレット一覧を見ようとすると、<code>sealed</code>のためエラーになります。</p>
+<div class="codeblock"><div class="codebar"><span class="lang">console</span><button type="button" class="copy" data-copy="vault secrets list" aria-label="コマンドのみコピー">コマンドのみコピー</button></div><pre><code><span class="ps" aria-hidden="true">$ </span>vault secrets list
+<span class="out">Error listing secrets engines: Error making API request.</span>
+
+<span class="out">URL: GET http://127.0.0.1:8200/v1/sys/mounts</span>
+<span class="out">Code: 503. Errors:</span>
+
+<span class="out">* Vault is sealed</span></code></pre></div>
+<p>Vault では<code>sealed</code>という状態になっているといかに強力な権限のあるトークンを使ったとしてもいかなる操作も受け付けません。<code>unseal</code>の処理は<code>Unseal Key</code>を使います。</p>
+<p>指定した通り 5 つのキーのうち 3 つのキーが集まると<code>unseal</code>されます。これは<a href="http://ohta-lab.jp/users/mitsugu/research/SSS/main.html" target="_blank" rel="noopener noreferrer">シャミアの秘密鍵分散法</a>という仕組みで、1 人に全ての鍵を集中させないための設計です。5 つの<code>Unseal Key</code>の任意の 3 つを使ってみましょう。<code>vault operator unseal</code>コマンドを 3 度実行します (引数を省略すると対話的にキー入力を求められます)。</p>
+<div class="codeblock"><div class="codebar"><span class="lang">console</span><button type="button" class="copy" data-copy="vault operator unseal
+vault operator unseal
+vault operator unseal" aria-label="コマンドのみコピー">コマンドのみコピー</button></div><pre><code><span class="ps" aria-hidden="true">$ </span>vault operator unseal
+<span class="out">Unseal Key (will be hidden):</span>
+<span class="out">Key                Value</span>
+<span class="out">---                -----</span>
+<span class="out">Seal Type          shamir</span>
+<span class="out">Initialized        true</span>
+<span class="out">Sealed             true</span>
+<span class="out">Total Shares       5</span>
+<span class="out">Threshold          3</span>
+<span class="out">Unseal Progress    1/3</span>
+<span class="out">Unseal Nonce       5ab14385-6ea9-f09b-4429-b6942c3cc005</span>
+<span class="out">Version            2.1.2+ent</span>
+<span class="out">Build Date         2026-10-06T15:32:01Z</span>
+<span class="out">Storage Type       raft</span>
+<span class="out">HA Enabled         true</span>
+
+<span class="ps" aria-hidden="true">$ </span>vault operator unseal
+<span class="out">...(省略)...</span>
+<span class="out">Unseal Progress    2/3</span>
+
+<span class="ps" aria-hidden="true">$ </span>vault operator unseal
+<span class="out">Key                     Value</span>
+<span class="out">---                     -----</span>
+<span class="out">Seal Type               shamir</span>
+<span class="out">Initialized             true</span>
+<span class="out">Sealed                  false</span>
+<span class="out">Total Shares            5</span>
+<span class="out">Threshold               3</span>
+<span class="out">Version                 2.1.2+ent</span>
+<span class="out">Build Date              2026-10-06T15:32:01Z</span>
+<span class="out">Storage Type            raft</span>
+<span class="out">Cluster Name            vault-cluster-2d0535cc</span>
+<span class="out">Cluster ID              99b81265-528f-d8c8-255a-6f8d24e3ef33</span>
+<span class="out">Removed From Cluster    false</span>
+<span class="out">HA Enabled              true</span>
+<span class="out">HA Cluster              n/a</span>
+<span class="out">HA Mode                 standby</span>
+<span class="out">Active Node Address     &lt;none&gt;</span>
+<span class="out">Raft Committed Index    59</span>
+<span class="out">Raft Applied Index      59</span></code></pre></div>
+<p>3 回目の出力で<code>Sealed</code>が<code>false</code>に変化したことがわかるでしょう。この状態で<code>Initial Root Token</code>を使ってログインします。</p>
+<div class="codeblock"><div class="codebar"><span class="lang">console</span><button type="button" class="copy" data-copy="vault login hvs.BhwdXXr0BANd68gmzAEtMAkQ" aria-label="コマンドのみコピー">コマンドのみコピー</button></div><pre><code><span class="ps" aria-hidden="true">$ </span>vault login hvs.BhwdXXr0BANd68gmzAEtMAkQ
+<span class="out">Success! You are now authenticated. The token information displayed below</span>
+<span class="out">is already stored in the token helper. You do NOT need to run &quot;vault login&quot;</span>
+<span class="out">again. Future Vault requests will automatically use this token.</span>
+
+<span class="out">Key                  Value</span>
+<span class="out">---                  -----</span>
+<span class="out">token                hvs.BhwdXXr0BANd68gmzAEtMAkQ</span>
+<span class="out">token_accessor       8rtGY0cJ2m0hFqj9r2hqkz1S</span>
+<span class="out">token_duration       ∞</span>
+<span class="out">token_renewable      false</span>
+<span class="out">token_policies       [&quot;root&quot;]</span>
+<span class="out">identity_policies    []</span>
+<span class="out">policies             [&quot;root&quot;]</span></code></pre></div>
+<p>これでログインは成功です。あわせて、<a href="#enterprise-ライセンスの配置">Enterprise ライセンスの配置</a> で設定したライセンスが正しく自動ロードされているかを確認しておきましょう。</p>
+<div class="codeblock"><div class="codebar"><span class="lang">console</span><button type="button" class="copy" data-copy="vault read sys/license/status" aria-label="コマンドのみコピー">コマンドのみコピー</button></div><pre><code><span class="ps" aria-hidden="true">$ </span>vault read sys/license/status
+<span class="out">Key                   Value</span>
+<span class="out">---                   -----</span>
+<span class="out">autoloaded            map[...features:[... Namespaces Sentinel ... Secrets Sync Automated Snapshots ...] expiration_time:2026-12-17T00:00:00Z ...]</span>
+<span class="out">autoloading_used      true</span>
+<span class="out">persisted_autoload    map[...]</span></code></pre></div>
+<p><code>autoloading_used</code>が<code>true</code>になっており、<code>features</code>に<code>Namespaces</code>や<code>Sentinel</code>、<code>Secrets Sync</code>といった本ハンズオンで使う Enterprise 機能が含まれていれば OK です。以降の章ではこの環境を使ってハンズオンを進めていきます。</p>
+<h3 id="seal-を試す">seal を試す<a class="anchor" href="#seal-を試す" aria-label="このセクションへのリンク">#</a></h3>
+<p><code>unseal</code>の逆の操作が<code>seal</code>です。インシデント対応などで Vault を即座にロックダウンしたいとき、<code>vault operator seal</code>を実行すると Vault はメモリ上のマスターキーを破棄し、再び封印された状態に戻ります。この操作は<code>sys/seal</code>への権限を持つトークンであれば一度の実行で完了します。</p>
+<div class="codeblock"><div class="codebar"><span class="lang">console</span><button type="button" class="copy" data-copy="vault operator seal
+vault status" aria-label="コマンドのみコピー">コマンドのみコピー</button></div><pre><code><span class="ps" aria-hidden="true">$ </span>vault operator seal
+<span class="out">Success! Vault is sealed.</span>
+
+<span class="ps" aria-hidden="true">$ </span>vault status
+<span class="out">Key                     Value</span>
+<span class="out">---                     -----</span>
+<span class="out">Seal Type               shamir</span>
+<span class="out">Initialized             true</span>
+<span class="out">Sealed                  true</span>
+<span class="out">Total Shares            5</span>
+<span class="out">Threshold               3</span>
+<span class="out">Unseal Progress         0/3</span>
+<span class="out">Unseal Nonce            n/a</span>
+<span class="out">Version                 2.1.2+ent</span>
+<span class="out">Build Date              2026-10-06T15:32:01Z</span>
+<span class="out">Storage Type            raft</span>
+<span class="out">Removed From Cluster    false</span>
+<span class="out">HA Enabled              true</span></code></pre></div>
+<p><code>Sealed</code>が<code>true</code>に戻り、再度いかなる操作も受け付けなくなりました。元に戻すには先ほどと同様<code>vault operator unseal</code>を 3 回実行します。手元で試した場合は、ここで unseal して先に進んでください。</p>
+<h3 id="auto-unseal-参考手順">Auto Unseal (参考手順)<a class="anchor" href="#auto-unseal-参考手順" aria-label="このセクションへのリンク">#</a></h3>
+<p>本番運用で<code>unseal</code>の鍵を 3 人がかりで毎回入力するのは現実的ではありません。そこで Vault はクラウドの鍵管理サービス (AWS KMS など) を使って自動的に<code>unseal</code>する <strong>Auto Unseal</strong> に対応しています。Shamir の鍵の代わりにマスターキーをクラウドの鍵で暗号化し、起動時に自動で復号して unseal します。</p>
+<p>AWS KMS を使う場合、コンフィグに<code>seal &quot;awskms&quot;</code>スタンザを追加します。</p>
+<div class="codeblock"><div class="codebar"><span class="lang">hcl</span><button type="button" class="copy" data-copy="seal &quot;awskms&quot; {
+  region     = &quot;ap-northeast-1&quot;
+  kms_key_id = &quot;xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx&quot;
+}" aria-label="コピー">コピー</button></div><pre><code>seal &quot;awskms&quot; {
+  region     = &quot;ap-northeast-1&quot;
+  kms_key_id = &quot;xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx&quot;
+}</code></pre></div>
+<p>この設定で起動して<code>vault operator init</code>を実行すると、通常の<code>Unseal Key</code>の代わりに<code>Recovery Key</code>が生成され、起動と同時に自動で unseal されます。</p>
+<div class="codeblock"><div class="codebar"><span class="lang">console</span><button type="button" class="copy" data-copy="vault operator init" aria-label="コマンドのみコピー">コマンドのみコピー</button></div><pre><code><span class="ps" aria-hidden="true">$ </span>vault operator init
+<span class="out">Recovery Key 1: 2bxJ0k7+lpoK8o6MAj7ebecIzh9V5d2n9L0GfWyUJjmn</span>
+<span class="out">Recovery Key 2: ElH9q/dkglVjFG8mfIZbriM8zbo1C1/JWH12j1R1L45j</span>
+<span class="out">Recovery Key 3: c9THb228rV++VUCTkyDjMUw0IG1LyKiaUa3ZmJzyq9oM</span>
+<span class="out">Recovery Key 4: EdhT6w6QKGCxtmuU8HSFbcSA/FXYYSHJ//fRF8UiD2+E</span>
+<span class="out">Recovery Key 5: s0APWYiXE6KMadHbwCbBWuTzL8CCUa5WnZOW5obGjM6k</span>
+
+<span class="out">Initial Root Token: hvs.Vfj4S1Wx5bFY5xms5eF751pr</span>
+
+<span class="out">Success! Vault is initialized</span></code></pre></div>
+<div class="codeblock"><div class="codebar"><span class="lang">console</span><button type="button" class="copy" data-copy="vault status" aria-label="コマンドのみコピー">コマンドのみコピー</button></div><pre><code><span class="ps" aria-hidden="true">$ </span>vault status
+<span class="out">Key                      Value</span>
+<span class="out">---                      -----</span>
+<span class="out">Recovery Seal Type       shamir</span>
+<span class="out">Seal Type                awskms</span>
+<span class="out">Initialized              true</span>
+<span class="out">Sealed                   false</span>
+<span class="out">Total Recovery Shares    5</span>
+<span class="out">Threshold                3</span>
+<span class="out">Version                  2.1.2+ent</span>
+<span class="out">Build Date               2026-10-06T15:32:01Z</span>
+<span class="out">Storage Type             raft</span>
+<span class="out">HA Enabled               true</span></code></pre></div>
+<p><code>Seal Type</code>が<code>awskms</code>になり、<code>vault operator init</code>で初期化されると <strong>Auto Unseal</strong>のおかげで自動的に Vault が Unseal 状態になることが確認できます (<em>Sealed = false</em>)。<code>Recovery Key</code>は<code>unseal</code>には使いませんが、Root Token の再生成などの重要な操作で必要になるため大切に保管してください。</p>
+<blockquote>
+<p>AWS KMS を使う場合、Vault が稼働するインスタンスに<code>kms:Encrypt</code>, <code>kms:Decrypt</code>, <code>kms:DescribeKey</code>の権限を持つ IAM ロールを付与しておく必要があります。</p>
+</blockquote>
+<h3 id="audit-device-を設定する">Audit Device を設定する<a class="anchor" href="#audit-device-を設定する" aria-label="このセクションへのリンク">#</a></h3>
+<p>Vault への全てのリクエストとレスポンスを記録しておくことは、監査やインシデント調査の観点で非常に重要です。Vault では <strong>Audit Device</strong> を有効化することで、誰がいつどのパスにアクセスしたかを漏れなく記録できます。シークレットの値そのものはハッシュ化されて記録されるため、ログから生のシークレットが漏れることはありません。</p>
+<p>ファイルに出力する Audit Device を有効化してみます。ログの出力先には、Vault を実行する<code>vault</code>ユーザが書き込めるディレクトリを用意します。ここでは<code>/var/log/vault/</code>を使います。</p>
+<blockquote>
+<p><strong>注意:</strong> パッケージ版の<code>vault.service</code>は systemd の<code>PrivateTmp=yes</code>で動くため、<code>/tmp</code>配下はサービス専用の隔離された領域になります。<code>file_path=/tmp/vault-audit.log</code>を指定するとログはホストの<code>/tmp</code>からは見えない場所に書かれてしまい、後述の<code>tail</code>で参照できません。そのため<code>/tmp</code>以外のパス (ここでは<code>/var/log/vault/</code>) を使います。</p>
+</blockquote>
+<div class="codeblock"><div class="codebar"><span class="lang">console</span><button type="button" class="copy" data-copy="sudo mkdir -p /var/log/vault
+sudo chown vault:vault /var/log/vault
+vault audit enable file file_path=/var/log/vault/audit.log
+vault audit list" aria-label="コマンドのみコピー">コマンドのみコピー</button></div><pre><code><span class="ps" aria-hidden="true">$ </span>sudo mkdir -p /var/log/vault
+<span class="ps" aria-hidden="true">$ </span>sudo chown vault:vault /var/log/vault
+
+<span class="ps" aria-hidden="true">$ </span>vault audit enable file file_path=/var/log/vault/audit.log
+<span class="out">Success! Enabled the file audit device at: file/</span>
+
+<span class="ps" aria-hidden="true">$ </span>vault audit list
+<span class="out">Path     Type    Description</span>
+<span class="out">----     ----    -----------</span>
+<span class="out">file/    file    n/a</span></code></pre></div>
+<p>有効化すると、以降の全ての操作がログに記録されます。試しに何かリクエストを投げてからログを覗いてみましょう。ログファイルは<code>vault</code>ユーザ所有 (パーミッション 600) で作られるため、参照には<code>sudo</code>を使います。</p>
+<div class="codeblock"><div class="codebar"><span class="lang">console</span><button type="button" class="copy" data-copy="vault secrets list &gt; /dev/null
+sudo tail -n 1 /var/log/vault/audit.log | jq" aria-label="コマンドのみコピー">コマンドのみコピー</button></div><pre><code><span class="ps" aria-hidden="true">$ </span>vault secrets list &gt; /dev/null
+<span class="ps" aria-hidden="true">$ </span>sudo tail -n 1 /var/log/vault/audit.log | jq
+<span class="out">{</span>
+<span class="out">  &quot;time&quot;: &quot;2026-10-07T17:50:54.652730286Z&quot;,</span>
+<span class="out">  &quot;type&quot;: &quot;response&quot;,</span>
+<span class="out">  &quot;auth&quot;: {</span>
+<span class="out">    &quot;client_token&quot;: &quot;hmac-sha256:...&quot;,</span>
+<span class="out">    &quot;policies&quot;: [&quot;root&quot;]</span>
+<span class="out">  },</span>
+<span class="out">  &quot;request&quot;: {</span>
+<span class="out">    &quot;operation&quot;: &quot;read&quot;,</span>
+<span class="out">    &quot;path&quot;: &quot;sys/mounts&quot;</span>
+<span class="out">  }</span>
+<span class="out">}</span></code></pre></div>
+<p><code>client_token</code>が<code>hmac-sha256:</code>から始まる値になっており、ハッシュ化されて記録されていることがわかります。Audit Device は複数同時に有効化でき、1 つでも書き込みに失敗すると Vault はリクエストをブロックします。これは「監査ログが残らない操作は許さない」という設計思想によるものです。本番では<code>syslog</code>や<code>socket</code>タイプを使ってログ基盤に集約するのが一般的です。</p>
+<h3 id="各種シークレットエンジンの有効化">各種シークレットエンジンの有効化<a class="anchor" href="#各種シークレットエンジンの有効化" aria-label="このセクションへのリンク">#</a></h3>
+<p>Vault では機能ごとに <strong>シークレットエンジン</strong> を有効化 (<code>enable</code>) して利用します。本ハンズオンで使うエンジンをここでまとめて有効化しておきましょう。<code>enable</code>は強い権限を必要とするため、ここでは Root Token を使います。</p>
+<div class="codeblock"><div class="codebar"><span class="lang">console</span><button type="button" class="copy" data-copy="export VAULT_ADDR=&quot;http://127.0.0.1:8200&quot;
+vault secrets enable -path=kv -version=2 kv
+vault secrets enable aws" aria-label="コマンドのみコピー">コマンドのみコピー</button></div><pre><code><span class="ps" aria-hidden="true">$ </span>export VAULT_ADDR=&quot;http://127.0.0.1:8200&quot;
+
+<span class="ps" aria-hidden="true">$ </span>vault secrets enable -path=kv -version=2 kv
+<span class="out">Success! Enabled the kv secrets engine at: kv/</span>
+
+<span class="ps" aria-hidden="true">$ </span>vault secrets enable aws
+<span class="out">Success! Enabled the aws secrets engine at: aws/</span></code></pre></div>
+<p>有効化したエンジンの一覧は<code>vault secrets list</code>で確認できます。</p>
+<div class="codeblock"><div class="codebar"><span class="lang">console</span><button type="button" class="copy" data-copy="vault secrets list" aria-label="コマンドのみコピー">コマンドのみコピー</button></div><pre><code><span class="ps" aria-hidden="true">$ </span>vault secrets list
+<span class="out">Path               Type              Accessor                   Description</span>
+<span class="out">----               ----              --------                   -----------</span>
+<span class="out">agent-registry/    agent_registry    agent-registry_78657e75    agent registry</span>
+<span class="out">aws/               aws               aws_745b3153               n/a</span>
+<span class="out">cubbyhole/         cubbyhole         cubbyhole_a9fbdd5c         per-token private secret storage</span>
+<span class="out">identity/          identity          identity_2689cb7d          identity store</span>
+<span class="out">kv/                kv                kv_e5f087d7                n/a</span>
+<span class="out">sys/               system            system_02822775            system endpoints used for control, policy and debugging</span></code></pre></div>
+<p><code>kv/</code>と<code>aws/</code>がそれぞれ API のエンドポイントとしてマウントされました。以降の章ではこれらのパスを使ってシークレットを扱っていきます。不要になったエンジンは<code>vault secrets disable &lt;path&gt;</code>で無効化できます。</p>
+<h3 id="参考リンク">参考リンク<a class="anchor" href="#参考リンク" aria-label="このセクションへのリンク">#</a></h3>
+<ul>
+<li><a href="https://developer.hashicorp.com/vault/install" target="_blank" rel="noopener noreferrer">Install Vault (Linux パッケージ)</a></li>
+<li><a href="https://developer.hashicorp.com/vault/docs/enterprise/license" target="_blank" rel="noopener noreferrer">Enterprise ライセンスの管理</a></li>
+<li><a href="https://developer.hashicorp.com/vault/docs/configuration" target="_blank" rel="noopener noreferrer">Server Configuration</a></li>
+<li><a href="https://developer.hashicorp.com/vault/docs/concepts/seal" target="_blank" rel="noopener noreferrer">Seal / Unseal</a></li>
+<li><a href="https://developer.hashicorp.com/vault/docs/configuration/seal/awskms" target="_blank" rel="noopener noreferrer">Auto Unseal with AWS KMS</a></li>
+<li><a href="https://developer.hashicorp.com/vault/docs/concepts/integrated-storage" target="_blank" rel="noopener noreferrer">Integrated Storage (Raft)</a></li>
+<li><a href="https://developer.hashicorp.com/vault/docs/audit" target="_blank" rel="noopener noreferrer">Audit Devices</a></li>
+</ul>
+<hr>
+<h2 id="vault-への-aws-権限付与">Vault への AWS 権限付与<a class="anchor" href="#vault-への-aws-権限付与" aria-label="このセクションへのリンク">#</a></h2>
+<p>この章では、後続の <a href="#aws-secret-engine">AWS Secret Engine</a> や <a href="#terraform-連携">Terraform 連携</a> で Vault が AWS を操作するための権限を、先に用意しておきます。Vault 自身が AWS の API を呼び出して IAM ユーザやアクセスキー、一時クレデンシャルを動的に発行するため、その土台となる権限付与をこの段階で済ませておくと、以降の章がスムーズに進みます。</p>
+<p>Vault に AWS 権限を与える方法は大きく 2 通りです。</p>
+<ul>
+<li>Vault が稼働するインスタンスに IAM ロールを付与する (EC2 / ECS などでの推奨)</li>
+<li>Vault に直接 IAM ユーザのアクセスキーを登録する (手元で試す場合など)</li>
+</ul>
+<p>ここでは手元で試す前提で、後者の方法を使います。Vault に登録する IAM ユーザには、必ずしも Admin 権限は必要なく、IAM ユーザやアクセスキーを発行・削除できる最低限の権限で十分です。以下のようなポリシーが目安です。</p>
+<div class="codeblock"><div class="codebar"><span class="lang">json</span><button type="button" class="copy" data-copy="{
+  &quot;Version&quot;: &quot;2012-10-17&quot;,
+  &quot;Statement&quot;: [
+    {
+      &quot;Effect&quot;: &quot;Allow&quot;,
+      &quot;Action&quot;: [
+        &quot;iam:AttachUserPolicy&quot;,
+        &quot;iam:CreateAccessKey&quot;,
+        &quot;iam:CreateUser&quot;,
+        &quot;iam:DeleteAccessKey&quot;,
+        &quot;iam:DeleteUser&quot;,
+        &quot;iam:DeleteUserPolicy&quot;,
+        &quot;iam:DetachUserPolicy&quot;,
+        &quot;iam:ListAccessKeys&quot;,
+        &quot;iam:ListAttachedUserPolicies&quot;,
+        &quot;iam:ListGroupsForUser&quot;,
+        &quot;iam:ListUserPolicies&quot;,
+        &quot;iam:PutUserPolicy&quot;,
+        &quot;iam:AddUserToGroup&quot;,
+        &quot;iam:RemoveUserFromGroup&quot;
+      ],
+      &quot;Resource&quot;: [&quot;arn:aws:iam::&lt;ACCOUNT_ID&gt;:user/vault-*&quot;]
+    }
+  ]
+}" aria-label="コピー">コピー</button></div><pre><code>{
+  &quot;Version&quot;: &quot;2012-10-17&quot;,
+  &quot;Statement&quot;: [
+    {
+      &quot;Effect&quot;: &quot;Allow&quot;,
+      &quot;Action&quot;: [
+        &quot;iam:AttachUserPolicy&quot;,
+        &quot;iam:CreateAccessKey&quot;,
+        &quot;iam:CreateUser&quot;,
+        &quot;iam:DeleteAccessKey&quot;,
+        &quot;iam:DeleteUser&quot;,
+        &quot;iam:DeleteUserPolicy&quot;,
+        &quot;iam:DetachUserPolicy&quot;,
+        &quot;iam:ListAccessKeys&quot;,
+        &quot;iam:ListAttachedUserPolicies&quot;,
+        &quot;iam:ListGroupsForUser&quot;,
+        &quot;iam:ListUserPolicies&quot;,
+        &quot;iam:PutUserPolicy&quot;,
+        &quot;iam:AddUserToGroup&quot;,
+        &quot;iam:RemoveUserFromGroup&quot;
+      ],
+      &quot;Resource&quot;: [&quot;arn:aws:iam::&lt;ACCOUNT_ID&gt;:user/vault-*&quot;]
+    }
+  ]
+}</code></pre></div>
+<p><code>Resource</code>を<code>vault-*</code>に絞ることで、Vault が発行するユーザ (後述の通り<code>vault-</code>から始まる名前になります) 以外には影響しないようにしています。このユーザのアクセスキーは <a href="#aws-secret-engine">AWS Secret Engine</a> の章で Vault に登録します。</p>
+<h3 id="実行手順-インスタンスプロファイルから-assumerole-で権限を渡す">実行手順: インスタンスプロファイルから AssumeRole で権限を渡す<a class="anchor" href="#実行手順-インスタンスプロファイルから-assumerole-で権限を渡す" aria-label="このセクションへのリンク">#</a></h3>
+<p>このハンズオンでは、より本番に近く、かつアクセスキーを一切保持しない方法を使います。Vault は EC2 上で動いているため、<strong>この EC2 のインスタンスプロファイル (<code>HandsonRole</code>) を使って対象リソース用のロールを AssumeRole し、そのロールの権限でシークレットを払い出す</strong> 構成にします。静的なアクセスキーを Vault に登録する必要がなく、権限は AssumeRole 先のロールに集約できます。</p>
+<p>構成は以下の 2 つで決まります。</p>
+<ol>
+<li><strong>AssumeRole される側のロールの許可ポリシー</strong> — Vault 経由で払い出す操作の実体 (ここでは対象 VPC にサブネットを作成する権限など) を定義します。</li>
+<li><strong>そのロールの信頼ポリシー (trust policy)</strong> — 誰が AssumeRole できるか。ここでは Vault が動く EC2 のインスタンスロール (<code>HandsonRole</code>) を信頼元に指定します。</li>
+</ol>
+<p>このハンズオンでは、<strong>あらかじめ作成済みの VPC に対して、Vault 経由で払い出した権限でサブネットを作成する</strong> というシナリオを題材にします。そのため対象の VPC は事前に用意しておいてください。</p>
+<blockquote>
+<p><strong>プレースホルダの置き換えが必要です。</strong> 以降の JSON やコマンドに出てくる <code>&lt;ACCOUNT_ID&gt;</code> (AWS アカウント ID) と <code>&lt;VPC_ID&gt;</code> (サブネットを作成する対象の既存 VPC の ID、例: <code>vpc-xxxxxxxx</code>) は、ご自身の環境の値に置き換えてください。リージョンも必要に応じて読み替えてください (本書では <code>ap-northeast-1</code> を使用)。</p>
+</blockquote>
+<p>まず、対象ロールに付与する <strong>許可ポリシー</strong> です。この例では、指定した既存 VPC (<code>&lt;VPC_ID&gt;</code>) にサブネットを作成・削除でき、作成時のタグ付けと可視化のための Describe 系を許可しています。<code>Resource</code> と <code>Condition</code> を絞ることで、払い出される権限を必要最小限に限定しています。サブネットの削除 (<code>ec2:DeleteSubnet</code>) と <code>ec2:DescribeNetworkInterfaces</code> を含めているのは、<a href="#terraform-連携">Terraform 連携</a> の <code>terraform destroy</code> で作成したサブネットを後片付けできるようにするためです。</p>
+<div class="codeblock"><div class="codebar"><span class="lang">json</span><button type="button" class="copy" data-copy="{
+    &quot;Version&quot;: &quot;2012-10-17&quot;,
+    &quot;Statement&quot;: [
+        {
+            &quot;Sid&quot;: &quot;CreateSubnetOnlyInTargetVPC&quot;,
+            &quot;Effect&quot;: &quot;Allow&quot;,
+            &quot;Action&quot;: &quot;ec2:CreateSubnet&quot;,
+            &quot;Resource&quot;: &quot;arn:aws:ec2:ap-northeast-1:&lt;ACCOUNT_ID&gt;:vpc/&lt;VPC_ID&gt;&quot;
+        },
+        {
+            &quot;Sid&quot;: &quot;CreateSubnetResource&quot;,
+            &quot;Effect&quot;: &quot;Allow&quot;,
+            &quot;Action&quot;: &quot;ec2:CreateSubnet&quot;,
+            &quot;Resource&quot;: &quot;arn:aws:ec2:ap-northeast-1:&lt;ACCOUNT_ID&gt;:subnet/*&quot;
+        },
+        {
+            &quot;Sid&quot;: &quot;TagOnlyWhenCreatingSubnet&quot;,
+            &quot;Effect&quot;: &quot;Allow&quot;,
+            &quot;Action&quot;: &quot;ec2:CreateTags&quot;,
+            &quot;Resource&quot;: &quot;arn:aws:ec2:ap-northeast-1:&lt;ACCOUNT_ID&gt;:subnet/*&quot;,
+            &quot;Condition&quot;: {
+                &quot;StringEquals&quot;: {
+                    &quot;ec2:CreateAction&quot;: &quot;CreateSubnet&quot;
+                }
+            }
+        },
+        {
+            &quot;Sid&quot;: &quot;DeleteSubnetResource&quot;,
+            &quot;Effect&quot;: &quot;Allow&quot;,
+            &quot;Action&quot;: &quot;ec2:DeleteSubnet&quot;,
+            &quot;Resource&quot;: &quot;arn:aws:ec2:ap-northeast-1:&lt;ACCOUNT_ID&gt;:subnet/*&quot;
+        },
+        {
+            &quot;Sid&quot;: &quot;ReadOnlyForVisibility&quot;,
+            &quot;Effect&quot;: &quot;Allow&quot;,
+            &quot;Action&quot;: [
+                &quot;ec2:DescribeSubnets&quot;,
+                &quot;ec2:DescribeVpcs&quot;,
+                &quot;ec2:DescribeAvailabilityZones&quot;,
+                &quot;ec2:DescribeNetworkInterfaces&quot;
+            ],
+            &quot;Resource&quot;: &quot;*&quot;
+        }
+    ]
+}" aria-label="コピー">コピー</button></div><pre><code>{
+    &quot;Version&quot;: &quot;2012-10-17&quot;,
+    &quot;Statement&quot;: [
+        {
+            &quot;Sid&quot;: &quot;CreateSubnetOnlyInTargetVPC&quot;,
+            &quot;Effect&quot;: &quot;Allow&quot;,
+            &quot;Action&quot;: &quot;ec2:CreateSubnet&quot;,
+            &quot;Resource&quot;: &quot;arn:aws:ec2:ap-northeast-1:&lt;ACCOUNT_ID&gt;:vpc/&lt;VPC_ID&gt;&quot;
+        },
+        {
+            &quot;Sid&quot;: &quot;CreateSubnetResource&quot;,
+            &quot;Effect&quot;: &quot;Allow&quot;,
+            &quot;Action&quot;: &quot;ec2:CreateSubnet&quot;,
+            &quot;Resource&quot;: &quot;arn:aws:ec2:ap-northeast-1:&lt;ACCOUNT_ID&gt;:subnet/*&quot;
+        },
+        {
+            &quot;Sid&quot;: &quot;TagOnlyWhenCreatingSubnet&quot;,
+            &quot;Effect&quot;: &quot;Allow&quot;,
+            &quot;Action&quot;: &quot;ec2:CreateTags&quot;,
+            &quot;Resource&quot;: &quot;arn:aws:ec2:ap-northeast-1:&lt;ACCOUNT_ID&gt;:subnet/*&quot;,
+            &quot;Condition&quot;: {
+                &quot;StringEquals&quot;: {
+                    &quot;ec2:CreateAction&quot;: &quot;CreateSubnet&quot;
+                }
+            }
+        },
+        {
+            &quot;Sid&quot;: &quot;DeleteSubnetResource&quot;,
+            &quot;Effect&quot;: &quot;Allow&quot;,
+            &quot;Action&quot;: &quot;ec2:DeleteSubnet&quot;,
+            &quot;Resource&quot;: &quot;arn:aws:ec2:ap-northeast-1:&lt;ACCOUNT_ID&gt;:subnet/*&quot;
+        },
+        {
+            &quot;Sid&quot;: &quot;ReadOnlyForVisibility&quot;,
+            &quot;Effect&quot;: &quot;Allow&quot;,
+            &quot;Action&quot;: [
+                &quot;ec2:DescribeSubnets&quot;,
+                &quot;ec2:DescribeVpcs&quot;,
+                &quot;ec2:DescribeAvailabilityZones&quot;,
+                &quot;ec2:DescribeNetworkInterfaces&quot;
+            ],
+            &quot;Resource&quot;: &quot;*&quot;
+        }
+    ]
+}</code></pre></div>
+<p>次に、同じ対象ロールの <strong>信頼ポリシー</strong> です。Vault が動く EC2 のインスタンスロール <code>HandsonRole</code> だけが、このロールを AssumeRole できるようにします。これにより「この EC2 上の Vault」以外はこのロールを引き受けられません。</p>
+<div class="codeblock"><div class="codebar"><span class="lang">json</span><button type="button" class="copy" data-copy="{
+    &quot;Version&quot;: &quot;2012-10-17&quot;,
+    &quot;Statement&quot;: [
+        {
+            &quot;Effect&quot;: &quot;Allow&quot;,
+            &quot;Principal&quot;: {
+                &quot;AWS&quot;: &quot;arn:aws:iam::&lt;ACCOUNT_ID&gt;:role/HandsonRole&quot;
+            },
+            &quot;Action&quot;: &quot;sts:AssumeRole&quot;
+        }
+    ]
+}" aria-label="コピー">コピー</button></div><pre><code>{
+    &quot;Version&quot;: &quot;2012-10-17&quot;,
+    &quot;Statement&quot;: [
+        {
+            &quot;Effect&quot;: &quot;Allow&quot;,
+            &quot;Principal&quot;: {
+                &quot;AWS&quot;: &quot;arn:aws:iam::&lt;ACCOUNT_ID&gt;:role/HandsonRole&quot;
+            },
+            &quot;Action&quot;: &quot;sts:AssumeRole&quot;
+        }
+    ]
+}</code></pre></div>
+<p>対象ロール (ここでは <code>handson-assume-role</code> とします) を上記 2 つのポリシーで作成します。お手元の IAM 変更権限を持つプロファイルで実行してください。許可ポリシーを <code>permissions.json</code>、信頼ポリシーを <code>trust.json</code> に保存しておきます。</p>
+<div class="codeblock"><div class="codebar"><span class="lang">console</span><button type="button" class="copy" data-copy="aws iam create-role \
+    --role-name handson-assume-role \
+    --assume-role-policy-document file://trust.json
+aws iam put-role-policy \
+    --role-name handson-assume-role \
+    --policy-name handson-assume-permissions \
+    --policy-document file://permissions.json" aria-label="コマンドのみコピー">コマンドのみコピー</button></div><pre><code><span class="ps" aria-hidden="true">$ </span>aws iam create-role \
+    --role-name handson-assume-role \
+    --assume-role-policy-document file://trust.json
+
+<span class="ps" aria-hidden="true">$ </span>aws iam put-role-policy \
+    --role-name handson-assume-role \
+    --policy-name handson-assume-permissions \
+    --policy-document file://permissions.json</code></pre></div>
+<p>あわせて、Vault が動く EC2 のインスタンスロール (<code>HandsonRole</code>) 側にも、この対象ロールを AssumeRole できる権限が必要です。信頼ポリシーと許可ポリシーは両方そろって初めて AssumeRole が成立します。</p>
+<div class="codeblock"><div class="codebar"><span class="lang">json</span><button type="button" class="copy" data-copy="{
+    &quot;Version&quot;: &quot;2012-10-17&quot;,
+    &quot;Statement&quot;: [
+        {
+            &quot;Effect&quot;: &quot;Allow&quot;,
+            &quot;Action&quot;: &quot;sts:AssumeRole&quot;,
+            &quot;Resource&quot;: &quot;arn:aws:iam::&lt;ACCOUNT_ID&gt;:role/handson-assume-role&quot;
+        }
+    ]
+}" aria-label="コピー">コピー</button></div><pre><code>{
+    &quot;Version&quot;: &quot;2012-10-17&quot;,
+    &quot;Statement&quot;: [
+        {
+            &quot;Effect&quot;: &quot;Allow&quot;,
+            &quot;Action&quot;: &quot;sts:AssumeRole&quot;,
+            &quot;Resource&quot;: &quot;arn:aws:iam::&lt;ACCOUNT_ID&gt;:role/handson-assume-role&quot;
+        }
+    ]
+}</code></pre></div>
+<p>これで、Vault は static なアクセスキーを持たずに、インスタンスプロファイルから <code>handson-assume-role</code> を AssumeRole してシークレット (この例では一時的なクレデンシャル) を払い出せます。この対象ロールの ARN は、<a href="#aws-secret-engine">AWS Secret Engine</a> の章でロールの <code>role_arns</code> として指定します。</p>
+<blockquote>
+<p>なお、<a href="#static-secret-engine">Static Secret Engine</a> の Secret Sync で AWS Secrets Manager へ同期する場合は、<code>HandsonRole</code> 側に Secrets Manager を操作する権限も必要です。以下を追加しておきます。</p>
+<div class="codeblock"><div class="codebar"><span class="lang">json</span><button type="button" class="copy" data-copy="{
+    &quot;Version&quot;: &quot;2012-10-17&quot;,
+    &quot;Statement&quot;: [
+        {
+            &quot;Sid&quot;: &quot;VaultSecretSync&quot;,
+            &quot;Effect&quot;: &quot;Allow&quot;,
+            &quot;Action&quot;: [
+                &quot;secretsmanager:CreateSecret&quot;,
+                &quot;secretsmanager:UpdateSecret&quot;,
+                &quot;secretsmanager:PutSecretValue&quot;,
+                &quot;secretsmanager:TagResource&quot;,
+                &quot;secretsmanager:DeleteSecret&quot;,
+                &quot;secretsmanager:DescribeSecret&quot;,
+                &quot;secretsmanager:ListSecrets&quot;,
+                &quot;secretsmanager:GetSecretValue&quot;
+            ],
+            &quot;Resource&quot;: &quot;*&quot;
+        }
+    ]
+}" aria-label="コピー">コピー</button></div><pre><code>{
+    &quot;Version&quot;: &quot;2012-10-17&quot;,
+    &quot;Statement&quot;: [
+        {
+            &quot;Sid&quot;: &quot;VaultSecretSync&quot;,
+            &quot;Effect&quot;: &quot;Allow&quot;,
+            &quot;Action&quot;: [
+                &quot;secretsmanager:CreateSecret&quot;,
+                &quot;secretsmanager:UpdateSecret&quot;,
+                &quot;secretsmanager:PutSecretValue&quot;,
+                &quot;secretsmanager:TagResource&quot;,
+                &quot;secretsmanager:DeleteSecret&quot;,
+                &quot;secretsmanager:DescribeSecret&quot;,
+                &quot;secretsmanager:ListSecrets&quot;,
+                &quot;secretsmanager:GetSecretValue&quot;
+            ],
+            &quot;Resource&quot;: &quot;*&quot;
+        }
+    ]
+}</code></pre></div>
+</blockquote>
+<h3 id="参考リンク-1">参考リンク<a class="anchor" href="#参考リンク-1" aria-label="このセクションへのリンク">#</a></h3>
+<ul>
+<li><a href="https://developer.hashicorp.com/vault/docs/secrets/aws" target="_blank" rel="noopener noreferrer">AWS Secret Engine</a></li>
+<li><a href="https://developer.hashicorp.com/vault/docs/secrets/aws#sts-assumerole" target="_blank" rel="noopener noreferrer">AssumeRole でのクレデンシャル発行</a></li>
+<li><a href="https://docs.aws.amazon.com/IAM/latest/UserGuide/id_roles_terms-and-concepts.html" target="_blank" rel="noopener noreferrer">IAM ロールの信頼ポリシー</a></li>
+</ul>
+<hr>
+<h2 id="アプリからの利用-auth-method">アプリからの利用 (Auth Method)<a class="anchor" href="#アプリからの利用-auth-method" aria-label="このセクションへのリンク">#</a></h2>
+<p>ここまではトークン発行の権限を持つユーザ (今回の場合は root) を使ってトークンを発行してきました。実際にはアプリケーションやインスタンスが Vault を利用する際、信頼する認証プロバイダで認証をし適切なトークンを発行するというワークフローを組みます。これを担うのが <strong>Auth Method</strong> です。</p>
+<p>Vault では以下のような認証プロバイダに対応しています。</p>
+<ul>
+<li>AppRole</li>
+<li>AliCloud</li>
+<li>AWS</li>
+<li>Azure</li>
+<li>GCP</li>
+<li>JWT/OIDC</li>
+<li>Kubernetes</li>
+<li>GitHub</li>
+<li>Okta</li>
+<li>LDAP</li>
+</ul>
+<p>ここでは AWS 上で動くワークロードを想定した <strong>AWS Auth</strong>、そして CI/CD やアプリなどマシン向けの汎用的な手段である <strong>AppRole</strong> の 2 つを扱います。各ロールはポリシーに紐付き、認証に成功するとクライアントにポリシーに基づいた権限のトークンが発行されます。</p>
+<h3 id="aws-auth">AWS Auth<a class="anchor" href="#aws-auth" aria-label="このセクションへのリンク">#</a></h3>
+<p>AWS auth method を使うと、AWS 上で動くインスタンスやサービスが、AWS が発行する認証情報をそのまま使って Vault にログインできます。アプリの中に Vault 用のクレデンシャルを別途埋め込む必要がなくなるのが大きな利点です。</p>
+<p>AWS auth method には <code>iam</code> と <code>ec2</code> の 2 つのタイプがあります。</p>
+<ul>
+<li><strong><code>iam</code> method</strong> — IAM クレデンシャルで署名した AWS リクエストに対して認証します。IAM ロールは EC2 のインスタンスプロファイルや Lambda などで自動的に利用できるため、AWS 上のほぼ全てのサービスに適用できます。より柔軟なアクセス制御ができるため、現在のベストプラクティスとしては基本的にこちらが推奨されます。</li>
+<li><strong><code>ec2</code> method</strong> — AWS が各 EC2 インスタンスに付与する <strong>インスタンスアイデンティティドキュメント</strong> (メタデータ) を使って認証します。EC2 インスタンスでしか使えませんが、追加のクレデンシャルを一切持たずに「この EC2 である」ことだけで認証できるのが特徴です。</li>
+</ul>
+<p>ここでは、用意済みの EC2 1 台だけで完結する形で、<strong><code>ec2</code> method</strong>（インスタンスメタデータによるログイン）を実際に動かして確認します。Vault サーバと認証されるクライアントは同じ EC2 上にあり、この EC2 が自分自身のインスタンスアイデンティティで Vault にログインします。</p>
+<h4 id="事前準備-vault-側の設定">事前準備: Vault 側の設定<a class="anchor" href="#事前準備-vault-側の設定" aria-label="このセクションへのリンク">#</a></h4>
+<p>まず、ec2 method のログインを成立させるために必要な Vault 側の設定を行います。root token でログインした状態で実行してください。</p>
+<p>ec2 method では、ログイン時に Vault が AWS に問い合わせてインスタンスの正当性を検証します。そのため <strong>Vault の実行環境 (この EC2 のインスタンスロール) に <code>ec2:DescribeInstances</code> の権限が必要</strong> です。IAM ロールを束縛条件に使う場合は <code>iam:GetInstanceProfile</code> も必要になります。以下のインラインポリシーを、この EC2 のインスタンスロールに付与しておきます。</p>
+<div class="codeblock"><div class="codebar"><span class="lang">json</span><button type="button" class="copy" data-copy="{
+  &quot;Version&quot;: &quot;2012-10-17&quot;,
+  &quot;Statement&quot;: [
+    {
+      &quot;Sid&quot;: &quot;VaultAwsEc2Auth&quot;,
+      &quot;Effect&quot;: &quot;Allow&quot;,
+      &quot;Action&quot;: [
+        &quot;ec2:DescribeInstances&quot;,
+        &quot;iam:GetInstanceProfile&quot;
+      ],
+      &quot;Resource&quot;: &quot;*&quot;
+    }
+  ]
+}" aria-label="コピー">コピー</button></div><pre><code>{
+  &quot;Version&quot;: &quot;2012-10-17&quot;,
+  &quot;Statement&quot;: [
+    {
+      &quot;Sid&quot;: &quot;VaultAwsEc2Auth&quot;,
+      &quot;Effect&quot;: &quot;Allow&quot;,
+      &quot;Action&quot;: [
+        &quot;ec2:DescribeInstances&quot;,
+        &quot;iam:GetInstanceProfile&quot;
+      ],
+      &quot;Resource&quot;: &quot;*&quot;
+    }
+  ]
+}</code></pre></div>
+<blockquote>
+<p>権限が不足している場合、ログイン時に <code>failed to verify instance ID: ... UnauthorizedOperation ... ec2:DescribeInstances</code> というエラーになります。</p>
+</blockquote>
+<p>次に、aws 認証メソッドを有効化し、Vault が AWS API を呼ぶためのクライアント設定を行います。この EC2 はインスタンスロールを持っているため、<code>auth/aws/config/client</code> に static なアクセスキーを渡す必要はありません (Vault がインスタンスロールの一時クレデンシャルを自動的に利用します)。</p>
+<div class="codeblock"><div class="codebar"><span class="lang">console</span><button type="button" class="copy" data-copy="export VAULT_ADDR=&quot;http://127.0.0.1:8200&quot;
+vault auth enable aws
+vault write -f auth/aws/config/client" aria-label="コマンドのみコピー">コマンドのみコピー</button></div><pre><code><span class="ps" aria-hidden="true">$ </span>export VAULT_ADDR=&quot;http://127.0.0.1:8200&quot;
+<span class="ps" aria-hidden="true">$ </span>vault auth enable aws
+<span class="out">Success! Enabled aws auth method at: aws/</span>
+
+<span class="ps" aria-hidden="true">$ </span>vault write -f auth/aws/config/client
+<span class="out">Success! Data written to: auth/aws/config/client</span></code></pre></div>
+<p>認証に成功したトークンへ割り当てるポリシーを作成します。ここでは <code>kv</code> を読めるだけの <code>ec2-demo</code> を用意します。</p>
+<div class="codeblock"><div class="codebar"><span class="lang">console</span><button type="button" class="copy" data-copy="echo 'path &quot;kv/*&quot; { capabilities = [&quot;read&quot;,&quot;list&quot;] }' | vault policy write ec2-demo -" aria-label="コマンドのみコピー">コマンドのみコピー</button></div><pre><code><span class="ps" aria-hidden="true">$ </span>echo 'path &quot;kv/*&quot; { capabilities = [&quot;read&quot;,&quot;list&quot;] }' | vault policy write ec2-demo -
+<span class="out">Success! Uploaded policy: ec2-demo</span></code></pre></div>
+<p>最後に、ec2 method のロールを作成します。<code>auth_type=ec2</code> を指定し、どのインスタンスを認証対象とするかを束縛条件で絞ります。ここではインスタンスプロファイルの ARN で束縛しています (他にも <code>bound_ami_id</code>・<code>bound_vpc_id</code>・<code>bound_account_id</code> などが使えます)。<code>&lt;ACCOUNT_ID&gt;</code> はご自身の AWS アカウント ID に置き換えてください。</p>
+<div class="codeblock"><div class="codebar"><span class="lang">console</span><button type="button" class="copy" data-copy="vault write auth/aws/role/ec2-role \
+    auth_type=ec2 \
+    bound_iam_instance_profile_arn=&quot;arn:aws:iam::&lt;ACCOUNT_ID&gt;:instance-profile/*&quot; \
+    policies=ec2-demo \
+    ttl=1h" aria-label="コマンドのみコピー">コマンドのみコピー</button></div><pre><code><span class="ps" aria-hidden="true">$ </span>vault write auth/aws/role/ec2-role \
+    auth_type=ec2 \
+    bound_iam_instance_profile_arn=&quot;arn:aws:iam::&lt;ACCOUNT_ID&gt;:instance-profile/*&quot; \
+    policies=ec2-demo \
+    ttl=1h
+<span class="out">Success! Data written to: auth/aws/role/ec2-role</span></code></pre></div>
+<p>これで Vault 側の事前設定は完了です。整理すると、ec2 method のログインに必要な事前設定は以下の 4 つです。</p>
+<ol>
+<li><code>vault auth enable aws</code> — aws 認証メソッドの有効化</li>
+<li><code>vault write -f auth/aws/config/client</code> — Vault が AWS を照会するためのクライアント設定</li>
+<li>ログイン後に付与するポリシーの作成</li>
+<li><code>auth_type=ec2</code> のロール作成 (束縛条件を 1 つ以上指定)</li>
+</ol>
+<p>加えて AWS 側では、前述のとおり Vault の実行ロールに <code>ec2:DescribeInstances</code> 権限が必要です。</p>
+<h4 id="メタデータを使ってログインする">メタデータを使ってログインする<a class="anchor" href="#メタデータを使ってログインする" aria-label="このセクションへのリンク">#</a></h4>
+<p>それでは、この EC2 のインスタンスメタデータを使ってログインします。EC2 のメタデータサービス (IMDSv2) から、インスタンスアイデンティティドキュメントの <strong>PKCS#7 署名</strong> を取得し、それを <code>auth/aws/login</code> に渡します。</p>
+<div class="codeblock"><div class="codebar"><span class="lang">console</span><button type="button" class="copy" data-copy="TOKEN=$(curl -s -X PUT &quot;http://169.254.169.254/latest/api/token&quot; \
+    -H &quot;X-aws-ec2-metadata-token-ttl-seconds: 300&quot;)
+PKCS7=$(curl -s -H &quot;X-aws-ec2-metadata-token: $TOKEN&quot; \
+    http://169.254.169.254/latest/dynamic/instance-identity/pkcs7 | tr -d '\n')
+NONCE=$(uuidgen)
+vault write auth/aws/login role=ec2-role pkcs7=&quot;$PKCS7&quot; nonce=&quot;$NONCE&quot;" aria-label="コマンドのみコピー">コマンドのみコピー</button></div><pre><code><span class="ps" aria-hidden="true">$ </span>TOKEN=$(curl -s -X PUT &quot;http://169.254.169.254/latest/api/token&quot; \
+    -H &quot;X-aws-ec2-metadata-token-ttl-seconds: 300&quot;)
+<span class="ps" aria-hidden="true">$ </span>PKCS7=$(curl -s -H &quot;X-aws-ec2-metadata-token: $TOKEN&quot; \
+    http://169.254.169.254/latest/dynamic/instance-identity/pkcs7 | tr -d '\n')
+<span class="ps" aria-hidden="true">$ </span>NONCE=$(uuidgen)
+
+<span class="ps" aria-hidden="true">$ </span>vault write auth/aws/login role=ec2-role pkcs7=&quot;$PKCS7&quot; nonce=&quot;$NONCE&quot;
+<span class="out">Key                            Value</span>
+<span class="out">---                            -----</span>
+<span class="out">token                          hvs.CAESIKQIrfE2F-lr3Kq5HmHZz66d4r1lJqehAsYIIW3oe4Ex...</span>
+<span class="out">token_accessor                 4OQKRMDsn6UjfprHU1ZyMnAP</span>
+<span class="out">token_duration                 1h</span>
+<span class="out">token_renewable                true</span>
+<span class="out">token_policies                 [&quot;default&quot; &quot;ec2-demo&quot;]</span>
+<span class="out">identity_policies              []</span>
+<span class="out">policies                       [&quot;default&quot; &quot;ec2-demo&quot;]</span>
+<span class="out">token_meta_account_id          123456789012</span>
+<span class="out">token_meta_auth_type           ec2</span>
+<span class="out">token_meta_role                ec2-role</span>
+<span class="out">token_meta_role_tag_max_ttl    0s</span></code></pre></div>
+<p>ログインに成功し、<code>ec2-demo</code> ポリシーの付いたトークンが発行されました。<code>token_meta_auth_type</code> が <code>ec2</code> になっており、この EC2 がメタデータの署名だけで認証されたことがわかります。アクセスキーやパスワードを一切渡していない点に注目してください。</p>
+<blockquote>
+<p><code>nonce</code> は再認証を防ぐための値です。同じインスタンスで再度ログインする際は、初回と同じ nonce を使う必要があります (省略すると Vault が生成し、<code>token_meta</code> 経由では返りません)。クライアント側で nonce を保持する運用が前提です。</p>
+<p>なお、CLI ヘルパーの <code>vault login -method=aws</code> は既定で <code>iam</code> method を使うため、<code>ec2</code> method のロールに対しては <code>auth method iam not allowed for role ...</code> というエラーになります。ec2 method では上記のように <code>vault write auth/aws/login</code> でメタデータの PKCS#7 を直接渡す形が確実です。</p>
+</blockquote>
+<p>発行されたトークンで、ポリシーどおり <code>kv</code> が読めることを確認できます。これで、AWS 上の EC2 が「自分が何者か」をメタデータで証明するだけで Vault にログインし、権限に応じたシークレットへアクセスできることが確認できました。</p>
+<h3 id="approle">AppRole<a class="anchor" href="#approle" aria-label="このセクションへのリンク">#</a></h3>
+<p>AWS 認証は AWS 上のワークロードに最適ですが、オンプレミスの CI/CD やコンテナなど、IAM ロールを持たないマシンから Vault を使いたい場合もあります。そうしたケースで広く使われるのが <strong>AppRole</strong> です。LDAP や他の認証方法が人による操作を前提としている一方、AppRole はマシンやアプリによる操作が前提とされており、自動化のワークフローに組み込みやすくなっています。</p>
+<p>ワークフローの例は以下のようなイメージです。</p>
+<p><img src="https://learn.hashicorp.com/assets/images/vault-approle-workflow.png" alt=""></p>
+<p>ref: <a href="https://learn.hashicorp.com/vault/identity-access-management/iam-authentication" target="_blank" rel="noopener noreferrer">https://learn.hashicorp.com/vault/identity-access-management/iam-authentication</a></p>
+<p>AppRole で認証するためには<code>Role ID</code>と<code>Secret ID</code>という二つの値が必要で、username と password のようなイメージです。各 AppRole はポリシーに紐付き、AppRole で承認されるとクライアントにポリシーに基づいた権限のトークンが発行されます。</p>
+<p>まず、この AppRole に紐付けるポリシーを用意します。ここでは<code>kv</code>を読み書きできる<code>app-policy</code>をその場で作成します。</p>
+<div class="codeblock"><div class="codebar"><span class="lang">console</span><button type="button" class="copy" data-copy="vault policy write app-policy - &lt;&lt;EOF
+path &quot;kv/*&quot; {
+  capabilities = [&quot;create&quot;, &quot;read&quot;, &quot;update&quot;, &quot;delete&quot;, &quot;list&quot;]
+}
+EOF" aria-label="コマンドのみコピー">コマンドのみコピー</button></div><pre><code><span class="ps" aria-hidden="true">$ </span>vault policy write app-policy - &lt;&lt;EOF
+path &quot;kv/*&quot; {
+  capabilities = [&quot;create&quot;, &quot;read&quot;, &quot;update&quot;, &quot;delete&quot;, &quot;list&quot;]
+}
+EOF
+<span class="out">Success! Uploaded policy: app-policy</span></code></pre></div>
+<p><code>approle</code>を<code>enable</code>にし、<code>app-policy</code>のポリシーに基づいた AppRole を一つ作成します。</p>
+<div class="codeblock"><div class="codebar"><span class="lang">console</span><button type="button" class="copy" data-copy="vault auth enable approle
+vault write -f auth/approle/role/my-approle policies=app-policy
+vault read auth/approle/role/my-approle" aria-label="コマンドのみコピー">コマンドのみコピー</button></div><pre><code><span class="ps" aria-hidden="true">$ </span>vault auth enable approle
+<span class="ps" aria-hidden="true">$ </span>vault write -f auth/approle/role/my-approle policies=app-policy
+<span class="ps" aria-hidden="true">$ </span>vault read auth/approle/role/my-approle
+
+<span class="out">Key                        Value</span>
+<span class="out">---                        -----</span>
+<span class="out">alias_metadata             map[]</span>
+<span class="out">bind_secret_id             true</span>
+<span class="out">local_secret_ids           false</span>
+<span class="out">policies                   [app-policy]</span>
+<span class="out">secret_id_bound_cidrs      &lt;nil&gt;</span>
+<span class="out">secret_id_num_uses         0</span>
+<span class="out">secret_id_ttl              0s</span>
+<span class="out">token_bound_cidrs          []</span>
+<span class="out">token_explicit_max_ttl     0s</span>
+<span class="out">token_max_ttl              0s</span>
+<span class="out">token_no_default_policy    false</span>
+<span class="out">token_num_uses             0</span>
+<span class="out">token_period               0s</span>
+<span class="out">token_policies             [app-policy]</span>
+<span class="out">token_ttl                  0s</span>
+<span class="out">token_type                 default</span></code></pre></div>
+<p>これで AppRole の作成は完了です。次に<code>Role ID</code>を取得します。</p>
+<div class="codeblock"><div class="codebar"><span class="lang">console</span><button type="button" class="copy" data-copy="vault read auth/approle/role/my-approle/role-id" aria-label="コマンドのみコピー">コマンドのみコピー</button></div><pre><code><span class="ps" aria-hidden="true">$ </span>vault read auth/approle/role/my-approle/role-id
+<span class="out">Key        Value</span>
+<span class="out">---        -----</span>
+<span class="out">role_id    2db44579-2255-8d2c-331a-40412419c072</span></code></pre></div>
+<p>次に<code>Secret ID</code>を取得しますが、いくつかの方法があります。</p>
+<p>一つは<code>push</code>と呼ばれる方法で、カスタムの値を指定するパターンです。</p>
+<div class="codeblock"><div class="codebar"><span class="lang">console</span><button type="button" class="copy" data-copy="vault write -f auth/approle/role/my-approle/custom-secret-id secret_id=ZeCletlb" aria-label="コマンドのみコピー">コマンドのみコピー</button></div><pre><code><span class="ps" aria-hidden="true">$ </span>vault write -f auth/approle/role/my-approle/custom-secret-id secret_id=ZeCletlb
+<span class="out">Key                   Value</span>
+<span class="out">---                   -----</span>
+<span class="out">secret_id             ZeCletlb</span>
+<span class="out">secret_id_accessor    7032e201-1ece-c288-d378-903bdc21a0b5</span>
+<span class="out">secret_id_num_uses    0</span>
+<span class="out">secret_id_ttl         0s</span></code></pre></div>
+<p>push 型はカスタムの値を指定できますが、Vault 以外のサーバ、アプリやツールなど Secret ID を発行する側に Secret ID を知らせてしまうことになるため、通常使用しません。<code>pull</code>と呼ばれる方法が一般的です。</p>
+<div class="codeblock"><div class="codebar"><span class="lang">console</span><button type="button" class="copy" data-copy="vault write -f auth/approle/role/my-approle/secret-id" aria-label="コマンドのみコピー">コマンドのみコピー</button></div><pre><code><span class="ps" aria-hidden="true">$ </span>vault write -f auth/approle/role/my-approle/secret-id
+<span class="out">Key                   Value</span>
+<span class="out">---                   -----</span>
+<span class="out">secret_id             4bed29dc-1956-337e-41a8-9708a233a5d7</span>
+<span class="out">secret_id_accessor    0762cc61-cfc9-7021-e50c-1cc70708391f</span>
+<span class="out">secret_id_num_uses    0</span>
+<span class="out">secret_id_ttl         0s</span></code></pre></div>
+<p>この場合、クライアントに値を持たせることがなく Secret ID の発行が可能となりよりセキュアです。</p>
+<p>これらを使って認証し、トークンを取得してみましょう。</p>
+<div class="codeblock"><div class="codebar"><span class="lang">console</span><button type="button" class="copy" data-copy="vault write auth/approle/login role_id=&quot;2db44579-2255-8d2c-331a-40412419c072&quot; secret_id=&quot;4bed29dc-1956-337e-41a8-9708a233a5d7&quot;" aria-label="コマンドのみコピー">コマンドのみコピー</button></div><pre><code><span class="ps" aria-hidden="true">$ </span>vault write auth/approle/login role_id=&quot;2db44579-2255-8d2c-331a-40412419c072&quot; secret_id=&quot;4bed29dc-1956-337e-41a8-9708a233a5d7&quot;
+<span class="out">Key                     Value</span>
+<span class="out">---                     -----</span>
+<span class="out">token                   hvs.CAESIL4wRXQFVjU4L9WPqrNfX5XEW5hogPuTFEQkkKOfu4WgG...</span>
+<span class="out">token_accessor          60YewuJwztluACX4ZpR4waFQ</span>
+<span class="out">token_duration          768h</span>
+<span class="out">token_renewable         true</span>
+<span class="out">token_policies          [&quot;app-policy&quot; &quot;default&quot;]</span>
+<span class="out">identity_policies       []</span>
+<span class="out">policies                [&quot;app-policy&quot; &quot;default&quot;]</span>
+<span class="out">token_meta_role_name    my-approle</span></code></pre></div>
+<p>AppRole により認証され、<code>app-policy</code>の権限を持ったトークンが発行されました。発行されたトークンを使うと、ポリシーで許可された<code>kv</code>や<code>aws/creds</code>にアクセスできます。</p>
+<p>今回は AppRole の基本的な使い方を試しましたが、より実践的にどのように扱うかは<a href="https://blog.kabuctl.run/?p=94" target="_blank" rel="noopener noreferrer">こちらの記事</a>に記載しておきましたので、本ハンズオン終了後、一読してみてください。</p>
+<h3 id="参考リンク-2">参考リンク<a class="anchor" href="#参考リンク-2" aria-label="このセクションへのリンク">#</a></h3>
+<ul>
+<li><a href="https://www.vaultproject.io/docs/auth/aws.html" target="_blank" rel="noopener noreferrer">AWS Auth Method</a></li>
+<li><a href="https://www.vaultproject.io/docs/auth/approle.html" target="_blank" rel="noopener noreferrer">AppRole Auth Method</a></li>
+<li><a href="https://www.vaultproject.io/api/auth/approle/index.html" target="_blank" rel="noopener noreferrer">AppRole API Document</a></li>
+<li><a href="https://learn.hashicorp.com/vault/operations/oidc-auth" target="_blank" rel="noopener noreferrer">Auth0 を使った OIDC 認証</a></li>
+</ul>
+<hr>
+<h2 id="static-secret-engine">Static Secret Engine<a class="anchor" href="#static-secret-engine" aria-label="このセクションへのリンク">#</a></h2>
+<p>Vault の最も基本的なユースケースが、静的なシークレット (パスワードや API キーなど) を安全に保管し、必要なときに取り出す Static Secret です。ここでは <a href="#vault-セットアップ">Vault セットアップ</a> で有効化した KV v2 シークレットエンジンを使い、CLI と API の両方からの読み書き、バージョニング、そして Vault Enterprise / HCP Vault の Secret Sync による AWS Secrets Manager への反映までを扱います。</p>
+<h3 id="vault-cli-経由での読み書き">Vault CLI 経由での読み書き<a class="anchor" href="#vault-cli-経由での読み書き" aria-label="このセクションへのリンク">#</a></h3>
+<p>まずは CLI でデータを put してみましょう。KV v2 では<code>vault kv</code>サブコマンドを使います。</p>
+<div class="codeblock"><div class="codebar"><span class="lang">console</span><button type="button" class="copy" data-copy="export VAULT_ADDR=&quot;http://127.0.0.1:8200&quot;
+vault kv put kv/iam name=kabu password=passwd
+vault kv get kv/iam" aria-label="コマンドのみコピー">コマンドのみコピー</button></div><pre><code><span class="ps" aria-hidden="true">$ </span>export VAULT_ADDR=&quot;http://127.0.0.1:8200&quot;
+<span class="ps" aria-hidden="true">$ </span>vault kv put kv/iam name=kabu password=passwd
+<span class="out">== Secret Path ==</span>
+<span class="out">kv/data/iam</span>
+
+<span class="out">======= Metadata =======</span>
+<span class="out">Key                Value</span>
+<span class="out">---                -----</span>
+<span class="out">created_time       2026-10-07T17:58:56.7543047Z</span>
+<span class="out">custom_metadata    &lt;nil&gt;</span>
+<span class="out">deletion_time      n/a</span>
+<span class="out">destroyed          false</span>
+<span class="out">version            1</span>
+
+<span class="ps" aria-hidden="true">$ </span>vault kv get kv/iam
+<span class="out">== Secret Path ==</span>
+<span class="out">kv/data/iam</span>
+
+<span class="out">======= Metadata =======</span>
+<span class="out">Key                Value</span>
+<span class="out">---                -----</span>
+<span class="out">created_time       2026-10-07T17:58:56.7543047Z</span>
+<span class="out">custom_metadata    &lt;nil&gt;</span>
+<span class="out">deletion_time      n/a</span>
+<span class="out">destroyed          false</span>
+<span class="out">version            1</span>
+
+<span class="out">====== Data ======</span>
+<span class="out">Key         Value</span>
+<span class="out">---         -----</span>
+<span class="out">name        kabu</span>
+<span class="out">password    passwd</span></code></pre></div>
+<p>KV v2 では、実データの上に<code>Secret Path</code>やバージョンなどの<code>Metadata</code>が表示されます。特定のフィールドだけを取り出すこともできます。アプリのスクリプトからパスワードだけを抜き出したいときなどに便利です。</p>
+<div class="codeblock"><div class="codebar"><span class="lang">console</span><button type="button" class="copy" data-copy="vault kv get -field=password kv/iam" aria-label="コマンドのみコピー">コマンドのみコピー</button></div><pre><code><span class="ps" aria-hidden="true">$ </span>vault kv get -field=password kv/iam
+<span class="out">passwd</span></code></pre></div>
+<p>最後にデータを削除します。KV v2 ではデータ本体とメタデータが分かれているため、完全に消す場合は両方を削除します。</p>
+<div class="codeblock"><div class="codebar"><span class="lang">console</span><button type="button" class="copy" data-copy="vault kv delete kv/iam
+vault kv metadata delete kv/iam" aria-label="コマンドのみコピー">コマンドのみコピー</button></div><pre><code><span class="ps" aria-hidden="true">$ </span>vault kv delete kv/iam
+<span class="ps" aria-hidden="true">$ </span>vault kv metadata delete kv/iam</code></pre></div>
+<h3 id="vault-api-経由での読み書き">Vault API 経由での読み書き<a class="anchor" href="#vault-api-経由での読み書き" aria-label="このセクションへのリンク">#</a></h3>
+<p>Vault の CLI は API への HTTPS のアクセスをラップしているため、全ての CLI での操作は API への curl のリクエストに変換できます。<code>-output-curl-string</code>を使うだけです。</p>
+<div class="codeblock"><div class="codebar"><span class="lang">console</span><button type="button" class="copy" data-copy="vault kv get -output-curl-string kv/iam" aria-label="コマンドのみコピー">コマンドのみコピー</button></div><pre><code><span class="ps" aria-hidden="true">$ </span>vault kv get -output-curl-string kv/iam
+<span class="out">curl -H &quot;X-Vault-Request: true&quot; -H &quot;X-Vault-Token: $(vault print token)&quot; http://127.0.0.1:8200/v1/kv/data/iam</span></code></pre></div>
+<p>アプリなどのクライアントから Vault の API を呼ぶ時などに、記述方法に迷った時に便利です。実際に API 経由で書き込みと読み出しをしてみましょう。KV v2 では、データを<code>data</code>というキーでラップして送る点に注意してください。</p>
+<div class="codeblock"><div class="codebar"><span class="lang">console</span><button type="button" class="copy" data-copy="curl -s \
+    -H &quot;X-Vault-Token: $(vault print token)&quot; \
+    -X POST \
+    -d '{&quot;data&quot;:{&quot;name&quot;:&quot;kabu&quot;,&quot;password&quot;:&quot;passwd&quot;}}' \
+    http://127.0.0.1:8200/v1/kv/data/iam | jq" aria-label="コマンドのみコピー">コマンドのみコピー</button></div><pre><code><span class="ps" aria-hidden="true">$ </span>curl -s \
+    -H &quot;X-Vault-Token: $(vault print token)&quot; \
+    -X POST \
+    -d '{&quot;data&quot;:{&quot;name&quot;:&quot;kabu&quot;,&quot;password&quot;:&quot;passwd&quot;}}' \
+    http://127.0.0.1:8200/v1/kv/data/iam | jq
+<span class="out">{</span>
+<span class="out">  &quot;request_id&quot;: &quot;495c24b9-fd45-6644-45af-e3b8b935dfb6&quot;,</span>
+<span class="out">  &quot;lease_id&quot;: &quot;&quot;,</span>
+<span class="out">  &quot;renewable&quot;: false,</span>
+<span class="out">  &quot;lease_duration&quot;: 0,</span>
+<span class="out">  &quot;data&quot;: {</span>
+<span class="out">    &quot;created_time&quot;: &quot;2026-10-07T17:59:11.678539746Z&quot;,</span>
+<span class="out">    &quot;custom_metadata&quot;: null,</span>
+<span class="out">    &quot;deletion_time&quot;: &quot;&quot;,</span>
+<span class="out">    &quot;destroyed&quot;: false,</span>
+<span class="out">    &quot;version&quot;: 1</span>
+<span class="out">  },</span>
+<span class="out">  &quot;wrap_info&quot;: null,</span>
+<span class="out">  &quot;warnings&quot;: null,</span>
+<span class="out">  &quot;auth&quot;: null,</span>
+<span class="out">  &quot;mount_type&quot;: &quot;kv&quot;</span>
+<span class="out">}</span></code></pre></div>
+<p>読み出しも試してみます。レスポンスの<code>data.data</code>に実際のシークレットが入っています。</p>
+<div class="codeblock"><div class="codebar"><span class="lang">console</span><button type="button" class="copy" data-copy="curl -s \
+    -H &quot;X-Vault-Token: $(vault print token)&quot; \
+    http://127.0.0.1:8200/v1/kv/data/iam | jq -r '.data.data'" aria-label="コマンドのみコピー">コマンドのみコピー</button></div><pre><code><span class="ps" aria-hidden="true">$ </span>curl -s \
+    -H &quot;X-Vault-Token: $(vault print token)&quot; \
+    http://127.0.0.1:8200/v1/kv/data/iam | jq -r '.data.data'
+<span class="out">{</span>
+<span class="out">  &quot;name&quot;: &quot;kabu&quot;,</span>
+<span class="out">  &quot;password&quot;: &quot;passwd&quot;</span>
+<span class="out">}</span></code></pre></div>
+<p>このように Vault の機能は全て HTTP API で提供されているため、どの言語のアプリからでも同じように利用できます。</p>
+<h3 id="バージョニング">バージョニング<a class="anchor" href="#バージョニング" aria-label="このセクションへのリンク">#</a></h3>
+<p>KV v2 の大きな特徴がバージョニングです。同じキーに対して書き込みを行うと、過去のデータは上書きされず世代として保持されます。データを上書きしてバージョン 2 を作ってみます。</p>
+<div class="codeblock"><div class="codebar"><span class="lang">console</span><button type="button" class="copy" data-copy="vault kv put kv/iam name=kabu password=passwd
+vault kv put kv/iam name=kabu-2 password=passwd" aria-label="コマンドのみコピー">コマンドのみコピー</button></div><pre><code><span class="ps" aria-hidden="true">$ </span>vault kv put kv/iam name=kabu password=passwd
+<span class="out">== Secret Path ==</span>
+<span class="out">kv/data/iam</span>
+
+<span class="out">======= Metadata =======</span>
+<span class="out">Key                Value</span>
+<span class="out">---                -----</span>
+<span class="out">created_time       2026-10-07T17:59:28.097467405Z</span>
+<span class="out">custom_metadata    &lt;nil&gt;</span>
+<span class="out">deletion_time      n/a</span>
+<span class="out">destroyed          false</span>
+<span class="out">version            1</span>
+
+<span class="ps" aria-hidden="true">$ </span>vault kv put kv/iam name=kabu-2 password=passwd
+<span class="out">== Secret Path ==</span>
+<span class="out">kv/data/iam</span>
+
+<span class="out">======= Metadata =======</span>
+<span class="out">Key                Value</span>
+<span class="out">---                -----</span>
+<span class="out">created_time       2026-10-07T17:59:28.172697961Z</span>
+<span class="out">custom_metadata    &lt;nil&gt;</span>
+<span class="out">deletion_time      n/a</span>
+<span class="out">destroyed          false</span>
+<span class="out">version            2</span></code></pre></div>
+<p>データが上書きされてバージョン 2 のデータが生成されました。古いバージョンのデータは<code>-version</code>オプションを付与することで参照できます。</p>
+<div class="codeblock"><div class="codebar"><span class="lang">console</span><button type="button" class="copy" data-copy="vault kv get -version=1 kv/iam" aria-label="コマンドのみコピー">コマンドのみコピー</button></div><pre><code><span class="ps" aria-hidden="true">$ </span>vault kv get -version=1 kv/iam
+<span class="out">== Secret Path ==</span>
+<span class="out">kv/data/iam</span>
+
+<span class="out">======= Metadata =======</span>
+<span class="out">Key                Value</span>
+<span class="out">---                -----</span>
+<span class="out">created_time       2026-10-07T17:59:28.097467405Z</span>
+<span class="out">custom_metadata    &lt;nil&gt;</span>
+<span class="out">deletion_time      n/a</span>
+<span class="out">destroyed          false</span>
+<span class="out">version            1</span>
+
+<span class="out">====== Data ======</span>
+<span class="out">Key         Value</span>
+<span class="out">---         -----</span>
+<span class="out">name        kabu</span>
+<span class="out">password    passwd</span></code></pre></div>
+<p>誤って上書きしてしまった場合でも、過去のバージョンを参照できるため復旧が容易です。古いバージョンのデータを完全に削除する際は<code>destroy</code>を使います。</p>
+<div class="codeblock"><div class="codebar"><span class="lang">console</span><button type="button" class="copy" data-copy="vault kv destroy -versions=1 kv/iam" aria-label="コマンドのみコピー">コマンドのみコピー</button></div><pre><code><span class="ps" aria-hidden="true">$ </span>vault kv destroy -versions=1 kv/iam
+<span class="out">Success! Data written to: kv/destroy/iam</span></code></pre></div>
+<p>もう一つ、更新時に注意したいのが<code>put</code>と<code>patch</code>の違いです。<code>put</code>はキーの集合ごと上書きするため、指定し忘れたキーは消えてしまいます。一部のフィールドだけを更新したい場合は<code>patch</code>を使います。</p>
+<div class="codeblock"><div class="codebar"><span class="lang">console</span><button type="button" class="copy" data-copy="vault kv patch kv/iam password=passwd-2
+vault kv get kv/iam" aria-label="コマンドのみコピー">コマンドのみコピー</button></div><pre><code><span class="ps" aria-hidden="true">$ </span>vault kv patch kv/iam password=passwd-2
+<span class="out">== Secret Path ==</span>
+<span class="out">kv/data/iam</span>
+
+<span class="out">======= Metadata =======</span>
+<span class="out">Key                Value</span>
+<span class="out">---                -----</span>
+<span class="out">created_time       2026-10-07T17:59:28.404613142Z</span>
+<span class="out">custom_metadata    &lt;nil&gt;</span>
+<span class="out">deletion_time      n/a</span>
+<span class="out">destroyed          false</span>
+<span class="out">version            3</span>
+
+<span class="ps" aria-hidden="true">$ </span>vault kv get kv/iam
+<span class="out">== Secret Path ==</span>
+<span class="out">kv/data/iam</span>
+
+<span class="out">======= Metadata =======</span>
+<span class="out">Key                Value</span>
+<span class="out">---                -----</span>
+<span class="out">created_time       2026-10-07T17:59:28.404613142Z</span>
+<span class="out">custom_metadata    &lt;nil&gt;</span>
+<span class="out">deletion_time      n/a</span>
+<span class="out">destroyed          false</span>
+<span class="out">version            3</span>
+
+<span class="out">====== Data ======</span>
+<span class="out">Key         Value</span>
+<span class="out">---         -----</span>
+<span class="out">name        kabu-2</span>
+<span class="out">password    passwd-2</span></code></pre></div>
+<p><code>name</code>を指定していないにもかかわらず残っていることがわかります。<code>patch</code>を使うとデータの一部のみを安全に更新できます。</p>
+<h3 id="secret-sync-による-aws-secrets-manager-への反映">Secret Sync による AWS Secrets Manager への反映<a class="anchor" href="#secret-sync-による-aws-secrets-manager-への反映" aria-label="このセクションへのリンク">#</a></h3>
+<blockquote>
+<p>Secret Sync は <strong>Vault Enterprise / HCP Vault</strong> で利用できる機能です。</p>
+</blockquote>
+<p>Vault に保管した Static Secret を、AWS Secrets Manager など外部のシークレットストアに自動で同期する機能が <strong>Secret Sync</strong> です。Vault を一元的な source of truth としながら、どうしても AWS Secrets Manager を参照する必要があるアプリやマネージドサービスにも値を届けられます。Vault 側でシークレットを更新すると、同期先にも自動で反映されます。</p>
+<p>Secret Sync は利用前に機能を <strong>アクティベート</strong> する必要があります。まず一度だけ以下を実行します。</p>
+<div class="codeblock"><div class="codebar"><span class="lang">console</span><button type="button" class="copy" data-copy="vault write -f sys/activation-flags/secrets-sync/activate" aria-label="コマンドのみコピー">コマンドのみコピー</button></div><pre><code><span class="ps" aria-hidden="true">$ </span>vault write -f sys/activation-flags/secrets-sync/activate
+<span class="out">Key            Value</span>
+<span class="out">---            -----</span>
+<span class="out">activated      [secrets-sync]</span>
+<span class="out">unactivated    [enable-scim force-identity-deduplication secrets-import]</span></code></pre></div>
+<p>次に、同期先となる AWS Secrets Manager の宛先 (destination) を登録します。<a href="#vault-への-aws-権限付与">Vault への AWS 権限付与</a> のとおり、この EC2 はインスタンスプロファイル (<code>HandsonRole</code>) を持っているため、ここでも <strong>静的なアクセスキーは不要</strong> です (リージョンのみ指定)。<code>HandsonRole</code> には Secrets Manager を操作する権限 (<code>secretsmanager:CreateSecret</code> / <code>PutSecretValue</code> / <code>TagResource</code> など) を付与しておきます。</p>
+<div class="codeblock"><div class="codebar"><span class="lang">console</span><button type="button" class="copy" data-copy="vault write sys/sync/destinations/aws-sm/my-dest region=ap-northeast-1" aria-label="コマンドのみコピー">コマンドのみコピー</button></div><pre><code><span class="ps" aria-hidden="true">$ </span>vault write sys/sync/destinations/aws-sm/my-dest region=ap-northeast-1
+<span class="out">Key                   Value</span>
+<span class="out">---                   -----</span>
+<span class="out">connection_details    map[region:ap-northeast-1]</span>
+<span class="out">name                  my-dest</span>
+<span class="out">options               map[custom_tags:map[] granularity_level:secret-path secret_name_template:vault/{{ .MountAccessor }}/{{ .SecretPath }}]</span>
+<span class="out">type                  aws-sm</span></code></pre></div>
+<p>次に、同期したい KV のシークレットをこの宛先に関連付け (associate) します。</p>
+<div class="codeblock"><div class="codebar"><span class="lang">console</span><button type="button" class="copy" data-copy="vault write sys/sync/destinations/aws-sm/my-dest/associations/set \
+    mount=kv \
+    secret_name=iam" aria-label="コマンドのみコピー">コマンドのみコピー</button></div><pre><code><span class="ps" aria-hidden="true">$ </span>vault write sys/sync/destinations/aws-sm/my-dest/associations/set \
+    mount=kv \
+    secret_name=iam
+<span class="out">Key                        Value</span>
+<span class="out">---                        -----</span>
+<span class="out">associated_secrets         map[kv_e5f087d7/iam:map[accessor:kv_e5f087d7 external_name:vault/kv_e5f087d7/iam last_operation:Write mount:kv secret_name:iam sync_status:SYNCED updated_at:2026-10-07T18:01:02.150313434Z]]</span>
+<span class="out">store_name                 my-dest</span>
+<span class="out">store_type                 aws-sm</span>
+<span class="out">sync_operation_counters    map[SYNCED:1]</span></code></pre></div>
+<p><code>sync_status</code> が <code>SYNCED</code> になれば同期完了です。AWS Secrets Manager 側に対応するシークレットが作成されます。シークレット名は既定で <code>vault/&lt;MountAccessor&gt;/&lt;SecretPath&gt;</code> というテンプレートで決まります。AWS CLI で確認してみましょう。</p>
+<div class="codeblock"><div class="codebar"><span class="lang">console</span><button type="button" class="copy" data-copy="aws secretsmanager list-secrets --region ap-northeast-1 --query 'SecretList[].Name'" aria-label="コマンドのみコピー">コマンドのみコピー</button></div><pre><code><span class="ps" aria-hidden="true">$ </span>aws secretsmanager list-secrets --region ap-northeast-1 --query 'SecretList[].Name'
+<span class="out">[</span>
+<span class="out">    &quot;vault/kv_e5f087d7/iam&quot;</span>
+<span class="out">]</span></code></pre></div>
+<p>Vault 側で<code>kv/iam</code>を更新すると、この AWS Secrets Manager のシークレットにも自動的に新しい値が反映されます。これにより、Vault を正とした運用を崩さずに、AWS ネイティブなシークレット参照とも共存できます。</p>
+<h3 id="参考リンク-3">参考リンク<a class="anchor" href="#参考リンク-3" aria-label="このセクションへのリンク">#</a></h3>
+<ul>
+<li><a href="https://www.vaultproject.io/docs/secrets/kv/kv-v2.html" target="_blank" rel="noopener noreferrer">Vault KV Secret Engine</a></li>
+<li><a href="https://www.vaultproject.io/api/secret/kv/index.html" target="_blank" rel="noopener noreferrer">KV Secret Engine API</a></li>
+<li><a href="https://developer.hashicorp.com/vault/docs/sync" target="_blank" rel="noopener noreferrer">Secret Sync</a></li>
+</ul>
+<hr>
+<h2 id="aws-secret-engine">AWS Secret Engine<a class="anchor" href="#aws-secret-engine" aria-label="このセクションへのリンク">#</a></h2>
+<p>AWS シークレットエンジンでは、AWS の権限を Vault 経由で動的に、かつ短命なクレデンシャルとして払い出せます。発行のたびにユニークで有効期限付きのクレデンシャルになるため、長期間有効なキーを配り回す必要がなくなります。</p>
+<p>サポートしているクレデンシャルタイプは下記の三つです。</p>
+<ul>
+<li>IAM User — IAM ユーザとアクセスキーをその都度作成・削除する</li>
+<li>Assumed Role — 既存の IAM ロールを STS で AssumeRole し、一時クレデンシャルを払い出す</li>
+<li>Federation Token — フェデレーショントークンを払い出す</li>
+</ul>
+<p>本ハンズオンでは、<a href="#vault-への-aws-権限付与">Vault への AWS 権限付与</a> で用意した構成に合わせて <strong>Assumed Role</strong> を使います。Vault は EC2 のインスタンスプロファイル (<code>HandsonRole</code>) の権限で対象ロール (ドキュメント上は <code>handson-assume-role</code>) を AssumeRole し、その権限スコープの一時クレデンシャルを払い出します。IAM ユーザを都度作成する <code>iam_user</code> と違い、<code>iam:CreateUser</code> などの強い権限が不要で、権限は AssumeRole 先のロールに集約できるのが利点です。</p>
+<h3 id="assumed-role-によるクレデンシャルの動的発行">Assumed Role によるクレデンシャルの動的発行<a class="anchor" href="#assumed-role-によるクレデンシャルの動的発行" aria-label="このセクションへのリンク">#</a></h3>
+<p><a href="#vault-セットアップ">Vault セットアップ</a> で<code>aws</code>エンジンは有効化済みですが、未実施の場合はここで enable にします。</p>
+<div class="codeblock"><div class="codebar"><span class="lang">shell</span><button type="button" class="copy" data-copy="export VAULT_ADDR=&quot;http://127.0.0.1:8200&quot;
+vault secrets enable aws" aria-label="コマンドのみコピー">コマンドのみコピー</button></div><pre><code><span class="ps" aria-hidden="true">$ </span>export VAULT_ADDR=&quot;http://127.0.0.1:8200&quot;
+<span class="ps" aria-hidden="true">$ </span>vault secrets enable aws</code></pre></div>
+<p>次に、Vault が AWS を操作するためのクライアント設定を行います。<a href="#vault-への-aws-権限付与">Vault への AWS 権限付与</a> のとおり、この EC2 はインスタンスプロファイル (<code>HandsonRole</code>) を持っているため、<code>aws/config/root</code> に <strong>静的なアクセスキーを渡す必要はありません</strong>。リージョンだけ指定すれば、Vault はインスタンスロールの一時クレデンシャルを使って AWS を呼び出します。</p>
+<div class="codeblock"><div class="codebar"><span class="lang">console</span><button type="button" class="copy" data-copy="vault write aws/config/root region=ap-northeast-1" aria-label="コマンドのみコピー">コマンドのみコピー</button></div><pre><code><span class="ps" aria-hidden="true">$ </span>vault write aws/config/root region=ap-northeast-1
+<span class="out">Success! Data written to: aws/config/root</span></code></pre></div>
+<p>続いて、AssumeRole 先のロールを紐付けた Vault ロールを作成します。<code>credential_type=assumed_role</code> を指定し、<code>role_arns</code> に <a href="#vault-への-aws-権限付与">Vault への AWS 権限付与</a> で作成した対象ロールの ARN を指定します。</p>
+<div class="codeblock"><div class="codebar"><span class="lang">console</span><button type="button" class="copy" data-copy="vault write aws/roles/subnet-role \
+    credential_type=assumed_role \
+    role_arns=&quot;arn:aws:iam::&lt;ACCOUNT_ID&gt;:role/handson-assume-role&quot;" aria-label="コマンドのみコピー">コマンドのみコピー</button></div><pre><code><span class="ps" aria-hidden="true">$ </span>vault write aws/roles/subnet-role \
+    credential_type=assumed_role \
+    role_arns=&quot;arn:aws:iam::&lt;ACCOUNT_ID&gt;:role/handson-assume-role&quot;
+<span class="out">Success! Data written to: aws/roles/subnet-role</span></code></pre></div>
+<blockquote>
+<p><code>&lt;ACCOUNT_ID&gt;</code> はご自身の AWS アカウント ID に置き換えてください。この対象ロールは、VPC へのサブネット作成権限など「払い出したい権限」を許可ポリシーに持ち、信頼ポリシーで <code>HandsonRole</code> からの AssumeRole を許可している必要があります (詳細は <a href="#vault-への-aws-権限付与">Vault への AWS 権限付与</a> を参照)。</p>
+</blockquote>
+<p>それでは、このロールを使ってクレデンシャルを発行してみましょう。<code>ttl</code> で有効期限を指定できます。</p>
+<div class="codeblock"><div class="codebar"><span class="lang">console</span><button type="button" class="copy" data-copy="vault read aws/creds/subnet-role ttl=15m" aria-label="コマンドのみコピー">コマンドのみコピー</button></div><pre><code><span class="ps" aria-hidden="true">$ </span>vault read aws/creds/subnet-role ttl=15m
+<span class="out">Key                Value</span>
+<span class="out">---                -----</span>
+<span class="out">lease_id           aws/creds/subnet-role/XPtUG66uD5wgdTY4MOxHZ6Pt</span>
+<span class="out">lease_duration     14m59s</span>
+<span class="out">lease_renewable    false</span>
+<span class="out">access_key         ASIA2UC3EJWSF43YTZU2</span>
+<span class="out">arn                arn:aws:sts::123456789012:assumed-role/handson-assume-role/vault-root-subnet-role-1791393377-uE1dJZxsiK7bLyDyyuOo</span>
+<span class="out">secret_key         5ruahqxcBQzW/LCt7H2jRaBUcvpt8NpkxIt2TN42</span>
+<span class="out">security_token     IQoJb3JpZ2luX2VjE...(省略)...</span>
+<span class="out">session_token      IQoJb3JpZ2luX2VjE...(省略)...</span>
+<span class="out">ttl                14m59s</span></code></pre></div>
+<p><code>security_token</code> と <code>session_token</code> には同じ STS のセッショントークンが入ります (<code>session_token</code> は後方互換のために同じ値が返ります)。<code>access_key</code> が <code>ASIA</code> から始まる STS の一時クレデンシャルになっており、<code>arn</code> が <code>assumed-role/handson-assume-role/...</code> になっていることがわかります。Vault が対象ロールを AssumeRole して払い出した証拠です。</p>
+<p>払い出したクレデンシャルで、対象ロールに許可された操作 (事前作成した VPC へのサブネット作成) が行えることを確認してみましょう。別端末で環境変数にセットして実行します (IAM の反映に数秒かかることがあります)。<code>&lt;VPC_ID&gt;</code> は <a href="#vault-への-aws-権限付与">Vault への AWS 権限付与</a> で対象にした既存 VPC の ID に置き換えてください。</p>
+<div class="codeblock"><div class="codebar"><span class="lang">console</span><button type="button" class="copy" data-copy="export AWS_ACCESS_KEY_ID=ASIA2UC3EJWSF43YTZU2
+export AWS_SECRET_ACCESS_KEY=5ruahqxcBQzW/LCt7H2jRaBUcvpt8NpkxIt2TN42
+export AWS_SESSION_TOKEN=IQoJb3JpZ2luX2VjE...(省略)...
+aws ec2 create-subnet \
+    --vpc-id &lt;VPC_ID&gt; \
+    --cidr-block 10.0.100.0/24 \
+    --region ap-northeast-1 \
+    --query 'Subnet.SubnetId'
+aws ec2 describe-instances --region ap-northeast-1" aria-label="コマンドのみコピー">コマンドのみコピー</button></div><pre><code><span class="ps" aria-hidden="true">$ </span>export AWS_ACCESS_KEY_ID=ASIA2UC3EJWSF43YTZU2
+<span class="ps" aria-hidden="true">$ </span>export AWS_SECRET_ACCESS_KEY=5ruahqxcBQzW/LCt7H2jRaBUcvpt8NpkxIt2TN42
+<span class="ps" aria-hidden="true">$ </span>export AWS_SESSION_TOKEN=IQoJb3JpZ2luX2VjE...(省略)...
+
+<span class="out"># 許可されている操作: 事前作成済みの VPC にサブネットを作成できる</span>
+<span class="ps" aria-hidden="true">$ </span>aws ec2 create-subnet \
+    --vpc-id &lt;VPC_ID&gt; \
+    --cidr-block 10.0.100.0/24 \
+    --region ap-northeast-1 \
+    --query 'Subnet.SubnetId'
+<span class="out">&quot;subnet-0a1b2c3d4e5f67890&quot;</span>
+
+<span class="out"># 許可されていない操作: DescribeInstances は拒否される</span>
+<span class="ps" aria-hidden="true">$ </span>aws ec2 describe-instances --region ap-northeast-1
+<span class="out">An error occurred (UnauthorizedOperation) when calling the DescribeInstances operation: You are not authorized to perform this operation. ... is not authorized to perform: ec2:DescribeInstances ...</span></code></pre></div>
+<p>対象ロールの許可ポリシーどおり、事前作成した VPC へのサブネット作成はできる一方で、許可していない <code>DescribeInstances</code> は拒否されました。Vault が払い出すクレデンシャルの権限が、AssumeRole 先ロールのスコープに正しく閉じていることが確認できます。</p>
+<blockquote>
+<p><strong>TTL の注意点:</strong> <code>assumed_role</code> の実体は STS の <code>AssumeRole</code> であり、STS の仕様上 <strong>最小 TTL は 15 分 (900 秒)</strong> です。<code>ttl=2m</code> のように 15 分未満を指定すると <code>Code: 400</code> のエラーになります。短命運用でも 15 分が下限となる点に注意してください。</p>
+</blockquote>
+<h3 id="ポリシーで-ttl-が異なるアクセスキー発行">ポリシーで TTL が異なるアクセスキー発行<a class="anchor" href="#ポリシーで-ttl-が異なるアクセスキー発行" aria-label="このセクションへのリンク">#</a></h3>
+<p>ロールは複数登録できるため、「用途ごとに権限と TTL を変えて使い分ける」運用が可能です。ロールには <code>default_sts_ttl</code> (発行時のデフォルト TTL) と <code>max_sts_ttl</code> (renew できる最大 TTL) を設定できます。ここでは短命運用向けに、デフォルト 15 分・最大 1 時間のロールを追加してみます。</p>
+<div class="codeblock"><div class="codebar"><span class="lang">console</span><button type="button" class="copy" data-copy="vault write aws/roles/subnet-role-short \
+    credential_type=assumed_role \
+    role_arns=&quot;arn:aws:iam::&lt;ACCOUNT_ID&gt;:role/handson-assume-role&quot; \
+    default_sts_ttl=15m \
+    max_sts_ttl=1h" aria-label="コマンドのみコピー">コマンドのみコピー</button></div><pre><code><span class="ps" aria-hidden="true">$ </span>vault write aws/roles/subnet-role-short \
+    credential_type=assumed_role \
+    role_arns=&quot;arn:aws:iam::&lt;ACCOUNT_ID&gt;:role/handson-assume-role&quot; \
+    default_sts_ttl=15m \
+    max_sts_ttl=1h
+<span class="out">Success! Data written to: aws/roles/subnet-role-short</span></code></pre></div>
+<p>発行してみると、<code>lease_duration</code> がロールに設定した 15 分になります。</p>
+<div class="codeblock"><div class="codebar"><span class="lang">console</span><button type="button" class="copy" data-copy="vault read aws/creds/subnet-role-short" aria-label="コマンドのみコピー">コマンドのみコピー</button></div><pre><code><span class="ps" aria-hidden="true">$ </span>vault read aws/creds/subnet-role-short
+<span class="out">Key                Value</span>
+<span class="out">---                -----</span>
+<span class="out">lease_id           aws/creds/subnet-role-short/OWLnwcl0F9onQQ1ER1C3Q3Lk</span>
+<span class="out">lease_duration     14m59s</span>
+<span class="out">access_key         ASIA2UC3EJWS...</span>
+<span class="out">arn                arn:aws:sts::123456789012:assumed-role/handson-assume-role/vault-root-subnet-role-short-...</span>
+<span class="out">...</span></code></pre></div>
+<p>同じ AssumeRole 先でも、ロールごとに TTL のプロファイルを分けておくことで、「短時間だけ使う用途」と「もう少し長く使う用途」をクライアント側の都合で選べます。TTL を短くするほど、万が一クレデンシャルが漏れても有効な時間が限られるため、より安全です。</p>
+<h3 id="強制-revoke">強制 Revoke<a class="anchor" href="#強制-revoke" aria-label="このセクションへのリンク">#</a></h3>
+<p>発行済みのクレデンシャルを即座に無効化したいケースもあります。発行時の <code>lease_id</code> を指定すれば、個別に revoke できます。</p>
+<div class="codeblock"><div class="codebar"><span class="lang">shell</span><button type="button" class="copy" data-copy="vault lease revoke aws/creds/subnet-role/&lt;LEASE_ID&gt;" aria-label="コマンドのみコピー">コマンドのみコピー</button></div><pre><code><span class="ps" aria-hidden="true">$ </span>vault lease revoke aws/creds/subnet-role/&lt;LEASE_ID&gt;</code></pre></div>
+<p>インシデント発生時など、特定のロールから発行した全てのクレデンシャルをまとめて強制的に失効させたい場合は、プレフィックス指定の <code>-prefix</code> を使います。</p>
+<div class="codeblock"><div class="codebar"><span class="lang">console</span><button type="button" class="copy" data-copy="vault lease revoke -prefix -force aws/creds/subnet-role" aria-label="コマンドのみコピー">コマンドのみコピー</button></div><pre><code><span class="ps" aria-hidden="true">$ </span>vault lease revoke -prefix -force aws/creds/subnet-role
+<span class="out">Warning! Force-removing leases can cause Vault to become out of sync with</span>
+<span class="out">secret engines!</span>
+<span class="out">Success! Force revoked any leases with prefix: aws/creds/subnet-role</span></code></pre></div>
+<p><code>-prefix</code> は指定したパス配下の全てのリースを対象にし、<code>-force</code> は Vault 側でリースを削除する際に AWS 側の失効に失敗しても強制的に進めるオプションです。これにより、<code>subnet-role</code> から発行した全てのクレデンシャルを一括で無効化できます。</p>
+<blockquote>
+<p><code>assumed_role</code> で払い出した STS の一時クレデンシャルは、revoke しても STS トークン自体は TTL 満了まで有効なまま、という点に注意してください (STS の仕様で即時失効はできません)。Vault 側のリース管理からは外れるため、<code>iam_user</code> タイプのように AWS 上のエンティティ (ユーザ) を即削除する強制力はありません。即時失効が必要な要件では <code>iam_user</code> タイプの採用も検討します。</p>
+</blockquote>
+<p>動的シークレットの TTL と revoke を組み合わせることで、「使うときだけ発行し、不要になったら破棄する」というセキュアな運用が実現できます。</p>
+<h3 id="参考リンク-4">参考リンク<a class="anchor" href="#参考リンク-4" aria-label="このセクションへのリンク">#</a></h3>
+<ul>
+<li><a href="https://developer.hashicorp.com/vault/docs/secrets/aws" target="_blank" rel="noopener noreferrer">AWS Secret Engine</a></li>
+<li><a href="https://developer.hashicorp.com/vault/api-docs/secret/aws" target="_blank" rel="noopener noreferrer">AWS Secret Engine API</a></li>
+<li><a href="https://developer.hashicorp.com/vault/docs/concepts/lease" target="_blank" rel="noopener noreferrer">Lease, Renew, and Revoke</a></li>
+</ul>
+<hr>
+<h2 id="テナントと権限設計">テナントと権限設計<a class="anchor" href="#テナントと権限設計" aria-label="このセクションへのリンク">#</a></h2>
+<p>Vault を組織で共有する際は、チームや環境ごとにテナントを分離し、それぞれに最低限の権限だけを与える設計が重要です。ここでは Namespace によるテナント分離、Policy による権限定義と割り当て、そして Sentinel によるより高度なガバナンスを扱います。</p>
+<h3 id="namespace-でテナントを分離する">Namespace でテナントを分離する<a class="anchor" href="#namespace-でテナントを分離する" aria-label="このセクションへのリンク">#</a></h3>
+<blockquote>
+<p>Namespace は <strong>Vault Enterprise / HCP Vault</strong> でのみ利用できる機能です。</p>
+</blockquote>
+<p>Namespace は Vault の中に独立した「仮想の Vault」を作る機能です。各 Namespace は独自のポリシー、認証メソッド、シークレットエンジン、トークンを持ち、互いに干渉しません。これにより 1 つの Vault クラスタを複数チームでセキュアに共有できます。</p>
+<p>ここでは<code>workshop</code>という Namespace を作ってみます。</p>
+<div class="codeblock"><div class="codebar"><span class="lang">console</span><button type="button" class="copy" data-copy="export VAULT_ADDR=&quot;http://127.0.0.1:8200&quot;
+vault namespace create workshop
+vault namespace list" aria-label="コマンドのみコピー">コマンドのみコピー</button></div><pre><code><span class="ps" aria-hidden="true">$ </span>export VAULT_ADDR=&quot;http://127.0.0.1:8200&quot;
+<span class="ps" aria-hidden="true">$ </span>vault namespace create workshop
+<span class="out">Key                  Value</span>
+<span class="out">---                  -----</span>
+<span class="out">custom_metadata      map[]</span>
+<span class="out">id                   KPzCf</span>
+<span class="out">path                 workshop/</span>
+
+<span class="ps" aria-hidden="true">$ </span>vault namespace list
+<span class="out">Keys</span>
+<span class="out">----</span>
+<span class="out">workshop/</span></code></pre></div>
+<p>作成した Namespace を使うには、<code>-namespace</code>オプションか<code>VAULT_NAMESPACE</code>環境変数を指定します。以降のコマンドをこの Namespace に対して実行してみましょう。</p>
+<div class="codeblock"><div class="codebar"><span class="lang">console</span><button type="button" class="copy" data-copy="export VAULT_NAMESPACE=workshop
+vault secrets enable -path=kv -version=2 kv" aria-label="コマンドのみコピー">コマンドのみコピー</button></div><pre><code><span class="ps" aria-hidden="true">$ </span>export VAULT_NAMESPACE=workshop
+<span class="ps" aria-hidden="true">$ </span>vault secrets enable -path=kv -version=2 kv
+<span class="out">Success! Enabled the kv secrets engine at: kv/</span></code></pre></div>
+<p>この<code>kv</code>はルート Namespace の<code>kv</code>とは完全に別物です。チームごとに Namespace を切ることで、「他チームのシークレットを誤って参照・上書きしてしまう」といった事故を構造的に防げます。本ハンズオンでは以降ルート Namespace で進めるため、一旦この環境変数は外しておきます。</p>
+<div class="codeblock"><div class="codebar"><span class="lang">console</span><button type="button" class="copy" data-copy="unset VAULT_NAMESPACE" aria-label="コマンドのみコピー">コマンドのみコピー</button></div><pre><code><span class="ps" aria-hidden="true">$ </span>unset VAULT_NAMESPACE</code></pre></div>
+<h3 id="policy-を作成して割り当てる">Policy を作成して割り当てる<a class="anchor" href="#policy-を作成して割り当てる" aria-label="このセクションへのリンク">#</a></h3>
+<p>ここまで Root Token を利用して様々な操作をしてきましたが、実際の運用では強力な権限を持つ Root Token は保持をせずに必要な時のみ生成します。通常、最低限の権限のユーザを作成し Vault を利用していきます。権限は <strong>Policy</strong> で定義し、トークンや認証ロールに割り当てます。</p>
+<p>まず、プリセットされるポリシー一覧を確認してみましょう。ポリシーを管理するエンドポイントは<code>sys/policy</code>と<code>sys/policies</code>です。<code>sys</code>のエンドポイントには<a href="https://www.vaultproject.io/api/system/index.html" target="_blank" rel="noopener noreferrer">その他にも様々な機能</a>が用意されています。</p>
+<div class="codeblock"><div class="codebar"><span class="lang">console</span><button type="button" class="copy" data-copy="vault policy list" aria-label="コマンドのみコピー">コマンドのみコピー</button></div><pre><code><span class="ps" aria-hidden="true">$ </span>vault policy list
+<span class="out">default</span>
+<span class="out">default-ceiling</span>
+<span class="out">root</span></code></pre></div>
+<blockquote>
+<p><code>default-ceiling</code> は Vault Enterprise にビルトインされているポリシーです (Agentic IAM の agent-registry 向け)。環境によって一覧に含まれます。本ハンズオンで前の章の認証メソッド (<code>app-policy</code> / <code>ec2-demo</code> など) を作成済みの場合は、それらもあわせて表示されます。</p>
+</blockquote>
+<p>Policy は Vault のコンフィグレーションと同様<code>HCL</code>で記述します。<code>path</code>で対象のエンドポイントを、<code>capabilities</code>でそのエンドポイントに対する権限を指定します。ここでは例として<code>kv</code>と<code>aws</code>のエンドポイントを操作できる<code>demo-policy</code>を作ってみます。</p>
+<div class="codeblock"><div class="codebar"><span class="lang">shell</span><button type="button" class="copy" data-copy="cat &gt; demo-policy.hcl &lt;&lt;EOF
+path &quot;kv/*&quot; {
+  capabilities = [ &quot;read&quot;, &quot;list&quot;, &quot;create&quot;, &quot;update&quot;, &quot;delete&quot; ]
+}
+
+path &quot;aws/creds/*&quot; {
+  capabilities = [ &quot;read&quot; ]
+}
+EOF" aria-label="コマンドのみコピー">コマンドのみコピー</button></div><pre><code><span class="ps" aria-hidden="true">$ </span>cat &gt; demo-policy.hcl &lt;&lt;EOF
+path &quot;kv/*&quot; {
+  capabilities = [ &quot;read&quot;, &quot;list&quot;, &quot;create&quot;, &quot;update&quot;, &quot;delete&quot; ]
+}
+
+path &quot;aws/creds/*&quot; {
+  capabilities = [ &quot;read&quot; ]
+}
+EOF</code></pre></div>
+<p>作ったら<code>vault policy write</code>のコマンドでポリシーを作成します。ポリシーの作成は Root Token で実施します。</p>
+<div class="codeblock"><div class="codebar"><span class="lang">console</span><button type="button" class="copy" data-copy="vault policy write demo-policy demo-policy.hcl
+vault policy list
+vault policy read demo-policy" aria-label="コマンドのみコピー">コマンドのみコピー</button></div><pre><code><span class="ps" aria-hidden="true">$ </span>vault policy write demo-policy demo-policy.hcl
+<span class="out">Success! Uploaded policy: demo-policy</span>
+
+<span class="ps" aria-hidden="true">$ </span>vault policy list
+<span class="out">default</span>
+<span class="out">default-ceiling</span>
+<span class="out">demo-policy</span>
+<span class="out">root</span>
+
+<span class="ps" aria-hidden="true">$ </span>vault policy read demo-policy
+<span class="out">path &quot;kv/*&quot; {</span>
+<span class="out">  capabilities = [ &quot;read&quot;, &quot;list&quot;, &quot;create&quot;, &quot;update&quot;, &quot;delete&quot; ]</span>
+<span class="out">}</span>
+
+<span class="out">path &quot;aws/creds/*&quot; {</span>
+<span class="out">  capabilities = [ &quot;read&quot; ]</span>
+<span class="out">}</span></code></pre></div>
+<p>新しいポリシーができました。このポリシーと紐づけられたトークンは<code>kv</code>への読み書きと<code>aws/creds</code>からのクレデンシャル発行の権限を与えられます。ではトークンを発行して、割り当ての動作を確認してみます。</p>
+<div class="codeblock"><div class="codebar"><span class="lang">console</span><button type="button" class="copy" data-copy="vault token create -policy=demo-policy" aria-label="コマンドのみコピー">コマンドのみコピー</button></div><pre><code><span class="ps" aria-hidden="true">$ </span>vault token create -policy=demo-policy
+<span class="out">Key                  Value</span>
+<span class="out">---                  -----</span>
+<span class="out">token                hvs.CAESIG...</span>
+<span class="out">token_accessor       LfQCnqPOJHGqO8TplfSjTNFs</span>
+<span class="out">token_duration       768h</span>
+<span class="out">token_renewable      true</span>
+<span class="out">token_policies       [&quot;default&quot; &quot;demo-policy&quot;]</span>
+<span class="out">identity_policies    []</span>
+<span class="out">policies             [&quot;default&quot; &quot;demo-policy&quot;]</span></code></pre></div>
+<p>発行したトークンを環境変数にセットして、権限の範囲を確かめます。</p>
+<div class="codeblock"><div class="codebar"><span class="lang">shell</span><button type="button" class="copy" data-copy="export DEMO_TOKEN=hvs.CAESIG..." aria-label="コマンドのみコピー">コマンドのみコピー</button></div><pre><code><span class="ps" aria-hidden="true">$ </span>export DEMO_TOKEN=hvs.CAESIG...</code></pre></div>
+<div class="codeblock"><div class="codebar"><span class="lang">console</span><button type="button" class="copy" data-copy="VAULT_TOKEN=$DEMO_TOKEN vault kv put kv/myapp password=p@SSW0d
+VAULT_TOKEN=$DEMO_TOKEN vault policy list" aria-label="コマンドのみコピー">コマンドのみコピー</button></div><pre><code><span class="ps" aria-hidden="true">$ </span>VAULT_TOKEN=$DEMO_TOKEN vault kv put kv/myapp password=p@SSW0d
+<span class="out">== Secret Path ==</span>
+<span class="out">kv/data/myapp</span>
+
+<span class="out">======= Metadata =======</span>
+<span class="out">Key                Value</span>
+<span class="out">---                -----</span>
+<span class="out">created_time       2026-10-07T18:03:40.123456789Z</span>
+<span class="out">custom_metadata    &lt;nil&gt;</span>
+<span class="out">deletion_time      n/a</span>
+<span class="out">destroyed          false</span>
+<span class="out">version            1</span>
+
+<span class="ps" aria-hidden="true">$ </span>VAULT_TOKEN=$DEMO_TOKEN vault policy list
+<span class="out">Error listing policies: Error making API request.</span>
+
+<span class="out">URL: GET http://127.0.0.1:8200/v1/sys/policies/acl?list=true</span>
+<span class="out">Code: 403. Errors:</span>
+
+<span class="out">* 1 error occurred:</span>
+<span class="out">	* permission denied</span></code></pre></div>
+<p>ポリシーに設定した通り、<code>kv</code>への書き込みは成功しますが、権限を与えていない<code>sys/policies</code>の操作はエラーになります。<code>deny by default</code>というルールのもと、明示的に許可したもの以外は全て<code>deny</code>となります。この「必要な権限だけを与える」設計が、Vault を安全に運用する基本です。</p>
+<h3 id="sentinel-による制御">Sentinel による制御<a class="anchor" href="#sentinel-による制御" aria-label="このセクションへのリンク">#</a></h3>
+<blockquote>
+<p>Sentinel は <strong>Vault Enterprise / HCP Vault</strong> でのみ利用できる Policy as Code のフレームワークです。</p>
+</blockquote>
+<p>Policy (ACL) が「どのパスにアクセスできるか」を制御するのに対し、Sentinel は「どういう条件のときに操作を許可するか」という、ACL だけでは表現できないロジックベースのガバナンスをコードで記述できます。接続元 IP やトークンの発行時刻、リクエスト内容などを条件にできるため、ゼロトラストやインシデント対応といった Enterprise のセキュリティ要件を Vault 側で強制できます。</p>
+<p>Sentinel ポリシーには、評価対象によって 2 種類があります。</p>
+<ul>
+<li><strong>EGP (Endpoint Governing Policy)</strong> — 特定の <strong>パス</strong> に紐付く。ログインパスなど未認証のパスにも適用できる</li>
+<li><strong>RGP (Role Governing Policy)</strong> — 特定の <strong>トークン / Identity エンティティ / グループ</strong> に紐付く</li>
+</ul>
+<p>さらに適用の強さに応じて 3 つのモードがあります。</p>
+<ul>
+<li><code>advisory</code> — 違反しても警告を出すだけで操作は通す</li>
+<li><code>soft-mandatory</code> — 原則ブロックするが、root 権限で上書きできる</li>
+<li><code>hard-mandatory</code> — 例外なくブロックする</li>
+</ul>
+<p>ここでは Enterprise で特に需要の高い 2 つのユースケースを、実際に動かして確認します。1 つはインシデント対応のための <strong>ブレークグラス (一斉トークン失効)</strong>、もう 1 つはネットワーク統制のための <strong>ログイン元 IP の制限</strong> です。</p>
+<blockquote>
+<p><strong>補足:</strong> Sentinel の<code>print()</code>によるデバッグ出力は、ポリシー評価が <strong>失敗したときだけ</strong> サーバログに出力されます。成功時には出力されない点に注意してください。</p>
+</blockquote>
+<h4 id="ユースケース-1-ブレークグラス-一斉トークン失効">ユースケース 1: ブレークグラス (一斉トークン失効)<a class="anchor" href="#ユースケース-1-ブレークグラス-一斉トークン失効" aria-label="このセクションへのリンク">#</a></h4>
+<p>トークンや生成済みシークレットが漏洩した可能性が判明したとき、「ある時刻より前に発行されたトークンを一斉に無効化したい」という要件が生まれます。全トークンを個別に revoke するのは時間がかかり、漏洩していないトークンまで巻き込んでしまいます。Sentinel なら、トークンの発行時刻 (<code>token.creation_time</code>) を条件に、カットオフ時刻より前のトークンだけを一括で遮断できます。</p>
+<p>まず、検証用に「古いトークン」と、カットオフ時刻をはさんだ「新しいトークン」を用意します。</p>
+<div class="codeblock"><div class="codebar"><span class="lang">console</span><button type="button" class="copy" data-copy="export VAULT_ADDR=&quot;http://127.0.0.1:8200&quot;
+OLD_TOKEN=$(vault token create -policy=default -ttl=60m -field=token)   # カットオフ前に発行
+CUTOFF=$(date -u +%Y-%m-%dT%H:%M:%SZ)                                   # この時刻を基準にする
+NEW_TOKEN=$(vault token create -policy=default -ttl=60m -field=token)   # カットオフ後に発行" aria-label="コマンドのみコピー">コマンドのみコピー</button></div><pre><code><span class="ps" aria-hidden="true">$ </span>export VAULT_ADDR=&quot;http://127.0.0.1:8200&quot;
+<span class="ps" aria-hidden="true">$ </span>OLD_TOKEN=$(vault token create -policy=default -ttl=60m -field=token)   # カットオフ前に発行
+<span class="ps" aria-hidden="true">$ </span>CUTOFF=$(date -u +%Y-%m-%dT%H:%M:%SZ)                                   # この時刻を基準にする
+<span class="ps" aria-hidden="true">$ </span>NEW_TOKEN=$(vault token create -policy=default -ttl=60m -field=token)   # カットオフ後に発行</code></pre></div>
+<p>次にブレークグラス用の EGP を書きます。<code>rule when not request.unauthenticated</code>で認証済みリクエストだけを対象にし、トークンの発行時刻がカットオフより後 (= 漏洩に関与していない) の場合のみ許可します。<code>&lt;CUTOFF&gt;</code>は上で取得した時刻に置き換えてください。</p>
+<div class="codeblock"><div class="codebar"><span class="lang">python</span><button type="button" class="copy" data-copy="import &quot;time&quot;
+
+main = rule when not request.unauthenticated {
+    time.load(token.creation_time).unix &gt; time.load(&quot;&lt;CUTOFF&gt;&quot;).unix
+}" aria-label="コピー">コピー</button></div><pre><code>import &quot;time&quot;
+
+main = rule when not request.unauthenticated {
+    time.load(token.creation_time).unix &gt; time.load(&quot;&lt;CUTOFF&gt;&quot;).unix
+}</code></pre></div>
+<p>全パスに適用したいので、<code>paths=&quot;*&quot;</code>・<code>hard-mandatory</code>で登録します。</p>
+<div class="codeblock"><div class="codebar"><span class="lang">console</span><button type="button" class="copy" data-copy="vault write sys/policies/egp/break-glass \
+    policy=@break-glass.sentinel \
+    paths=&quot;*&quot; \
+    enforcement_level=&quot;hard-mandatory&quot;" aria-label="コマンドのみコピー">コマンドのみコピー</button></div><pre><code><span class="ps" aria-hidden="true">$ </span>vault write sys/policies/egp/break-glass \
+    policy=@break-glass.sentinel \
+    paths=&quot;*&quot; \
+    enforcement_level=&quot;hard-mandatory&quot;
+<span class="out">Success! Data written to: sys/policies/egp/break-glass</span></code></pre></div>
+<p>では古いトークンで操作してみます。カットオフより前に発行されているため、拒否されます。</p>
+<div class="codeblock"><div class="codebar"><span class="lang">console</span><button type="button" class="copy" data-copy="VAULT_TOKEN=$OLD_TOKEN vault token lookup" aria-label="コマンドのみコピー">コマンドのみコピー</button></div><pre><code><span class="ps" aria-hidden="true">$ </span>VAULT_TOKEN=$OLD_TOKEN vault token lookup
+<span class="out">Error looking up token: Error making API request.</span>
+
+<span class="out">URL: GET http://127.0.0.1:8200/v1/auth/token/lookup-self</span>
+<span class="out">Code: 403. Errors:</span>
+
+<span class="out">* 2 errors occurred:</span>
+<span class="out">	* egp standard policy &quot;root/break-glass&quot; evaluation resulted in denial.</span>
+<span class="out">The specific error was:</span>
+<span class="out">&lt;nil&gt;</span>
+<span class="out">A trace of the execution for policy &quot;root/break-glass&quot; is available:</span>
+<span class="out">Result: false</span>
+<span class="out">Description: &lt;none&gt;</span>
+<span class="out">Rule &quot;main&quot; (root/break-glass:3:1) = false</span>
+<span class="out">	* permission denied</span></code></pre></div>
+<p>一方、カットオフより後に発行された新しいトークンは問題なく通ります。</p>
+<div class="codeblock"><div class="codebar"><span class="lang">console</span><button type="button" class="copy" data-copy="VAULT_TOKEN=$NEW_TOKEN vault token lookup" aria-label="コマンドのみコピー">コマンドのみコピー</button></div><pre><code><span class="ps" aria-hidden="true">$ </span>VAULT_TOKEN=$NEW_TOKEN vault token lookup
+<span class="out">Key                 Value</span>
+<span class="out">---                 -----</span>
+<span class="out">display_name        token</span>
+<span class="out">policies            [default]</span>
+<span class="out">ttl                 59m</span>
+<span class="out">...</span></code></pre></div>
+<p>このように、トークンを個別に revoke することなく、発行時刻を境に「疑わしいトークンだけ」を即座に遮断できます。対応が済んだらポリシーを削除して通常運用に戻します。</p>
+<div class="codeblock"><div class="codebar"><span class="lang">console</span><button type="button" class="copy" data-copy="vault delete sys/policies/egp/break-glass" aria-label="コマンドのみコピー">コマンドのみコピー</button></div><pre><code><span class="ps" aria-hidden="true">$ </span>vault delete sys/policies/egp/break-glass
+<span class="out">Success! Data deleted (if it existed) at: sys/policies/egp/break-glass</span></code></pre></div>
+<h4 id="ユースケース-2-ログイン元-ip-を制限する">ユースケース 2: ログイン元 IP を制限する<a class="anchor" href="#ユースケース-2-ログイン元-ip-を制限する" aria-label="このセクションへのリンク">#</a></h4>
+<p>次はネットワーク統制です。「社内ネットワーク (特定の CIDR) からのログインしか認めない」という要件を、<code>sockaddr</code>インポートを使って認証メソッドのログインパスに適用します。ここでは<code>userpass</code>認証メソッドで検証します。</p>
+<p>まず検証用の認証メソッドとユーザを用意します。</p>
+<div class="codeblock"><div class="codebar"><span class="lang">console</span><button type="button" class="copy" data-copy="vault auth enable userpass
+vault write auth/userpass/users/alice password=pass policies=default" aria-label="コマンドのみコピー">コマンドのみコピー</button></div><pre><code><span class="ps" aria-hidden="true">$ </span>vault auth enable userpass
+<span class="out">Success! Enabled userpass auth method at: userpass/</span>
+
+<span class="ps" aria-hidden="true">$ </span>vault write auth/userpass/users/alice password=pass policies=default
+<span class="out">Success! Data written to: auth/userpass/users/alice</span></code></pre></div>
+<p>次に、許可する CIDR を<code>10.0.0.0/8</code>に限定する EGP を書きます。<code>request.connection.remote_addr</code> (接続元 IP) がその範囲に含まれるかを<code>sockaddr.is_contained</code>で判定し、<code>rule when</code>でログインパスのときだけ評価します。</p>
+<div class="codeblock"><div class="codebar"><span class="lang">python</span><button type="button" class="copy" data-copy="import &quot;sockaddr&quot;
+import &quot;strings&quot;
+
+# 社内ネットワークとして許可する CIDR
+allowed_cidr = &quot;10.0.0.0/8&quot;
+
+cidrcheck = rule {
+    sockaddr.is_contained(allowed_cidr, request.connection.remote_addr)
+}
+
+main = rule when strings.has_prefix(request.path, &quot;auth/userpass/login&quot;) {
+    cidrcheck
+}" aria-label="コピー">コピー</button></div><pre><code>import &quot;sockaddr&quot;
+import &quot;strings&quot;
+
+# 社内ネットワークとして許可する CIDR
+allowed_cidr = &quot;10.0.0.0/8&quot;
+
+cidrcheck = rule {
+    sockaddr.is_contained(allowed_cidr, request.connection.remote_addr)
+}
+
+main = rule when strings.has_prefix(request.path, &quot;auth/userpass/login&quot;) {
+    cidrcheck
+}</code></pre></div>
+<p>ログインパスに紐付けて登録します。</p>
+<div class="codeblock"><div class="codebar"><span class="lang">console</span><button type="button" class="copy" data-copy="vault write sys/policies/egp/userpass-cidr \
+    policy=@userpass-cidr.sentinel \
+    paths=&quot;auth/userpass/login/*&quot; \
+    enforcement_level=&quot;hard-mandatory&quot;" aria-label="コマンドのみコピー">コマンドのみコピー</button></div><pre><code><span class="ps" aria-hidden="true">$ </span>vault write sys/policies/egp/userpass-cidr \
+    policy=@userpass-cidr.sentinel \
+    paths=&quot;auth/userpass/login/*&quot; \
+    enforcement_level=&quot;hard-mandatory&quot;
+<span class="out">Success! Data written to: sys/policies/egp/userpass-cidr</span></code></pre></div>
+<p>このハンズオン環境では Vault へローカル (<code>127.0.0.1</code>) から接続しているため、許可 CIDR の<code>10.0.0.0/8</code>には含まれません。ログインを試すと拒否されます。</p>
+<div class="codeblock"><div class="codebar"><span class="lang">console</span><button type="button" class="copy" data-copy="vault login -method=userpass username=alice password=pass" aria-label="コマンドのみコピー">コマンドのみコピー</button></div><pre><code><span class="ps" aria-hidden="true">$ </span>vault login -method=userpass username=alice password=pass
+<span class="out">Error authenticating: Error making API request.</span>
+
+<span class="out">URL: PUT http://127.0.0.1:8200/v1/auth/userpass/login/alice</span>
+<span class="out">Code: 400. Errors:</span>
+
+<span class="out">* 2 errors occurred:</span>
+<span class="out">	* egp standard policy &quot;root/userpass-cidr&quot; evaluation resulted in denial.</span>
+<span class="out">The specific error was:</span>
+<span class="out">&lt;nil&gt;</span>
+<span class="out">	* permission denied</span></code></pre></div>
+<p>逆に、許可 CIDR に自分の接続元を含めれば通ります。<code>allowed_cidr</code>を<code>127.0.0.1/32</code>に変えて同じパスに上書き登録し、再度ログインしてみましょう。</p>
+<div class="codeblock"><div class="codebar"><span class="lang">console</span><button type="button" class="copy" data-copy="vault write sys/policies/egp/userpass-cidr \
+    policy=@userpass-cidr-local.sentinel \
+    paths=&quot;auth/userpass/login/*&quot; \
+    enforcement_level=&quot;hard-mandatory&quot;
+vault login -method=userpass username=alice password=pass" aria-label="コマンドのみコピー">コマンドのみコピー</button></div><pre><code><span class="ps" aria-hidden="true">$ </span>vault write sys/policies/egp/userpass-cidr \
+    policy=@userpass-cidr-local.sentinel \
+    paths=&quot;auth/userpass/login/*&quot; \
+    enforcement_level=&quot;hard-mandatory&quot;
+<span class="out">Success! Data written to: sys/policies/egp/userpass-cidr</span>
+
+<span class="ps" aria-hidden="true">$ </span>vault login -method=userpass username=alice password=pass
+<span class="out">Success! You are now authenticated. The token information displayed below</span>
+<span class="out">is already stored in the token helper.</span>
+
+<span class="out">Key                    Value</span>
+<span class="out">---                    -----</span>
+<span class="out">token                  hvs.CAESI....</span>
+<span class="out">token_policies         [&quot;default&quot;]</span>
+<span class="out">...</span></code></pre></div>
+<p>同じユーザ・同じ認証情報でも、接続元 IP が許可範囲外ならログイン自体が成立しません。ACL では表現できない「どこからアクセスしているか」という条件を、Sentinel なら認証の段階で強制できます。確認が済んだらポリシーを削除しておきます。なお、<code>userpass</code> でのログインに成功すると、token helper に保存されているトークンが root から <code>alice</code> のものに置き換わります。<code>alice</code> のトークンにはポリシーを削除する権限がないため、削除の前に <strong>root で再ログイン</strong> します (<code>vault-keys.txt</code> は <a href="#vault-の初期化処理-init--unseal">Vault の初期化処理</a> で保存したファイルです)。</p>
+<div class="codeblock"><div class="codebar"><span class="lang">console</span><button type="button" class="copy" data-copy="vault login $(grep 'Initial Root Token' vault-keys.txt | awk '{print $4}')
+vault delete sys/policies/egp/userpass-cidr" aria-label="コマンドのみコピー">コマンドのみコピー</button></div><pre><code><span class="ps" aria-hidden="true">$ </span>vault login $(grep 'Initial Root Token' vault-keys.txt | awk '{print $4}')
+
+<span class="ps" aria-hidden="true">$ </span>vault delete sys/policies/egp/userpass-cidr
+<span class="out">Success! Data deleted (if it existed) at: sys/policies/egp/userpass-cidr</span></code></pre></div>
+<p>Sentinel を使うと、このように Policy (ACL) だけでは表現しきれない組織のコンプライアンス要件やインシデント対応のロジックを、Vault 側でコードとして強制できます。</p>
+<h3 id="参考リンク-5">参考リンク<a class="anchor" href="#参考リンク-5" aria-label="このセクションへのリンク">#</a></h3>
+<ul>
+<li><a href="https://developer.hashicorp.com/vault/docs/enterprise/namespaces" target="_blank" rel="noopener noreferrer">Namespaces</a></li>
+<li><a href="https://www.vaultproject.io/docs/concepts/policies.html" target="_blank" rel="noopener noreferrer">Policies</a></li>
+<li><a href="https://www.vaultproject.io/api/system/policy.html" target="_blank" rel="noopener noreferrer">Policy API Document</a></li>
+<li><a href="https://developer.hashicorp.com/vault/docs/enterprise/sentinel" target="_blank" rel="noopener noreferrer">Sentinel</a></li>
+</ul>
+<hr>
+<h2 id="terraform-連携">Terraform 連携<a class="anchor" href="#terraform-連携" aria-label="このセクションへのリンク">#</a></h2>
+<p>ここまで Vault を CLI や API から使ってきましたが、インフラをコードで管理する Terraform と組み合わせると、Vault の価値はさらに高まります。ここでは Terraform から Vault の動的クレデンシャルを使って AWS に<code>apply</code>する方法を扱います。</p>
+<h3 id="terraform-のインストール">Terraform のインストール<a class="anchor" href="#terraform-のインストール" aria-label="このセクションへのリンク">#</a></h3>
+<p>Terraform も HashiCorp の公式リポジトリから<code>dnf</code>でインストールできます (<a href="#vault-セットアップ">Vault セットアップ</a> でリポジトリを追加済みなら、追加手順は不要です)。</p>
+<div class="codeblock"><div class="codebar"><span class="lang">console</span><button type="button" class="copy" data-copy="sudo dnf install -y dnf-plugins-core
+sudo dnf config-manager --add-repo https://rpm.releases.hashicorp.com/AmazonLinux/hashicorp.repo
+sudo dnf install -y terraform
+terraform version" aria-label="コマンドのみコピー">コマンドのみコピー</button></div><pre><code><span class="ps" aria-hidden="true">$ </span>sudo dnf install -y dnf-plugins-core
+<span class="ps" aria-hidden="true">$ </span>sudo dnf config-manager --add-repo https://rpm.releases.hashicorp.com/AmazonLinux/hashicorp.repo
+<span class="ps" aria-hidden="true">$ </span>sudo dnf install -y terraform
+
+<span class="ps" aria-hidden="true">$ </span>terraform version
+<span class="out">Terraform v1.16.5</span>
+<span class="out">on linux_arm64</span></code></pre></div>
+<h3 id="動的クレデンシャルによる-apply">動的クレデンシャルによる apply<a class="anchor" href="#動的クレデンシャルによる-apply" aria-label="このセクションへのリンク">#</a></h3>
+<p>Terraform で AWS にリソースを作る際、通常は長期間有効なアクセスキーを環境変数や<code>provider</code>ブロックに書きます。これはキーの管理と漏洩リスクという課題を抱えています。そこで、<a href="#aws-secret-engine">AWS Secret Engine</a> で設定した動的クレデンシャル (<code>subnet-role</code>) を Terraform から読み出し、その短命なクレデンシャルで AWS プロバイダを認証させます。ここでは <a href="#vault-への-aws-権限付与">Vault への AWS 権限付与</a> で用意した権限の範囲で、<strong>事前作成済みの VPC にサブネットを 1 つ作成</strong> してみます。</p>
+<p>作業用ディレクトリに<code>main.tf</code>を作成します。<code>&lt;VPC_ID&gt;</code> はサブネットを作成する既存 VPC の ID に置き換えてください。<code>cidr_block</code> は対象 VPC の CIDR 範囲内の空きレンジにしてください。</p>
+<div class="codeblock"><div class="codebar"><span class="lang">hcl</span><button type="button" class="copy" data-copy="terraform {
+  required_version = &quot;&gt;= 1.10.0&quot;
+  required_providers {
+    vault = { source = &quot;hashicorp/vault&quot; }
+    aws   = { source = &quot;hashicorp/aws&quot; }
+  }
+}
+
+provider &quot;vault&quot; {}
+
+# AWS Secret Engine の assumed_role ロール (subnet-role) から
+# STS の一時クレデンシャルを動的に発行する
+data &quot;vault_aws_access_credentials&quot; &quot;creds&quot; {
+  backend = &quot;aws&quot;
+  role    = &quot;subnet-role&quot;
+  type    = &quot;sts&quot;
+}
+
+# 発行された短命なクレデンシャルで AWS プロバイダを認証する
+# assumed_role は STS の一時クレデンシャルのため session token も渡す
+provider &quot;aws&quot; {
+  region     = &quot;ap-northeast-1&quot;
+  access_key = data.vault_aws_access_credentials.creds.access_key
+  secret_key = data.vault_aws_access_credentials.creds.secret_key
+  token      = data.vault_aws_access_credentials.creds.security_token
+}
+
+# 事前作成済みの VPC にサブネットを作成する
+resource &quot;aws_subnet&quot; &quot;handson&quot; {
+  vpc_id            = &quot;&lt;VPC_ID&gt;&quot;
+  cidr_block        = &quot;10.0.110.0/24&quot;
+  availability_zone = &quot;ap-northeast-1a&quot;
+  tags = { Name = &quot;vault-handson-subnet&quot; }
+}
+
+output &quot;subnet_id&quot; {
+  value = aws_subnet.handson.id
+}" aria-label="コピー">コピー</button></div><pre><code>terraform {
+  required_version = &quot;&gt;= 1.10.0&quot;
+  required_providers {
+    vault = { source = &quot;hashicorp/vault&quot; }
+    aws   = { source = &quot;hashicorp/aws&quot; }
+  }
+}
+
+provider &quot;vault&quot; {}
+
+# AWS Secret Engine の assumed_role ロール (subnet-role) から
+# STS の一時クレデンシャルを動的に発行する
+data &quot;vault_aws_access_credentials&quot; &quot;creds&quot; {
+  backend = &quot;aws&quot;
+  role    = &quot;subnet-role&quot;
+  type    = &quot;sts&quot;
+}
+
+# 発行された短命なクレデンシャルで AWS プロバイダを認証する
+# assumed_role は STS の一時クレデンシャルのため session token も渡す
+provider &quot;aws&quot; {
+  region     = &quot;ap-northeast-1&quot;
+  access_key = data.vault_aws_access_credentials.creds.access_key
+  secret_key = data.vault_aws_access_credentials.creds.secret_key
+  token      = data.vault_aws_access_credentials.creds.security_token
+}
+
+# 事前作成済みの VPC にサブネットを作成する
+resource &quot;aws_subnet&quot; &quot;handson&quot; {
+  vpc_id            = &quot;&lt;VPC_ID&gt;&quot;
+  cidr_block        = &quot;10.0.110.0/24&quot;
+  availability_zone = &quot;ap-northeast-1a&quot;
+  tags = { Name = &quot;vault-handson-subnet&quot; }
+}
+
+output &quot;subnet_id&quot; {
+  value = aws_subnet.handson.id
+}</code></pre></div>
+<p><code>VAULT_ADDR</code> と <code>VAULT_TOKEN</code> を設定して<code>init</code>→<code>apply</code>します。</p>
+<div class="codeblock"><div class="codebar"><span class="lang">console</span><button type="button" class="copy" data-copy="export VAULT_ADDR=&quot;http://127.0.0.1:8200&quot;
+export VAULT_TOKEN=$(vault print token)
+terraform init
+terraform apply -auto-approve" aria-label="コマンドのみコピー">コマンドのみコピー</button></div><pre><code><span class="ps" aria-hidden="true">$ </span>export VAULT_ADDR=&quot;http://127.0.0.1:8200&quot;
+<span class="ps" aria-hidden="true">$ </span>export VAULT_TOKEN=$(vault print token)
+
+<span class="ps" aria-hidden="true">$ </span>terraform init
+<span class="out">...</span>
+<span class="out">Terraform has been successfully initialized!</span>
+
+<span class="ps" aria-hidden="true">$ </span>terraform apply -auto-approve
+<span class="out">data.vault_aws_access_credentials.creds: Reading...</span>
+<span class="out">data.vault_aws_access_credentials.creds: Read complete after 1s [id=...]</span>
+<span class="out">...</span>
+<span class="out">aws_subnet.handson: Creating...</span>
+<span class="out">aws_subnet.handson: Creation complete after 1s [id=subnet-06e2c7b51aa5d93ca]</span>
+
+<span class="out">Apply complete! Resources: 1 added, 0 changed, 0 destroyed.</span>
+
+<span class="out">Outputs:</span>
+
+<span class="out">subnet_id = &quot;subnet-06e2c7b51aa5d93ca&quot;</span></code></pre></div>
+<p>実行の裏側では、<a href="#aws-secret-engine">AWS Secret Engine</a> の章で見たのと同じように、Vault が <code>handson-assume-role</code> を AssumeRole した STS の一時クレデンシャルが払い出され、そのクレデンシャルでサブネットが作成されます。リースが切れるとクレデンシャルは自動的に失効します。これにより、Terraform の実行ごとにユニークで短命なクレデンシャルが使われ、長期間有効なキーを一切保持する必要がなくなります。</p>
+<blockquote>
+<p><strong><code>terraform destroy</code> について:</strong> <a href="#vault-への-aws-権限付与">Vault への AWS 権限付与</a> で <code>handson-assume-role</code> に <code>ec2:DeleteSubnet</code> を含めているため、同じ Vault 動的クレデンシャルで <code>terraform destroy</code> を実行すれば、作成したサブネットを削除できます。手動で作成したサブネットの削除も含め、まとめた手順は <a href="#クリーンアップ-削除手順">クリーンアップ (削除手順)</a> を参照してください。</p>
+</blockquote>
+<blockquote>
+<p>HCP Terraform / Terraform Enterprise では、ワークスペースと Vault の間に信頼関係を結び、ワークロードアイデンティティで Vault を認証する <strong>Vault-backed dynamic credentials</strong> が利用できます。この場合<code>VAULT_TOKEN</code>すら保持する必要がなくなります。</p>
+</blockquote>
+<h3 id="参考リンク-6">参考リンク<a class="anchor" href="#参考リンク-6" aria-label="このセクションへのリンク">#</a></h3>
+<ul>
+<li><a href="https://registry.terraform.io/providers/hashicorp/vault/latest/docs/data-sources/aws_access_credentials" target="_blank" rel="noopener noreferrer">Vault Provider: vault_aws_access_credentials</a></li>
+<li><a href="https://developer.hashicorp.com/terraform/cloud-docs/dynamic-provider-credentials/vault-backed" target="_blank" rel="noopener noreferrer">Vault-backed dynamic credentials in HCP Terraform</a></li>
+</ul>
+<hr>
+<h2 id="day2-運用">Day2 運用<a class="anchor" href="#day2-運用" aria-label="このセクションへのリンク">#</a></h2>
+<p>Vault を本番で動かし始めると、構築よりも日々の運用 (Day2) の比重が大きくなります。その中でも最も重要なのが、万一に備えたバックアップとリストアです。ここでは Vault の推奨ストレージである Integrated Storage (Raft) を前提に、スナップショットの取得と復元を扱います。</p>
+<h3 id="バックアップ-スナップショットの取得">バックアップ (スナップショットの取得)<a class="anchor" href="#バックアップ-スナップショットの取得" aria-label="このセクションへのリンク">#</a></h3>
+<p>Integrated Storage を使っている場合、Vault はクラスタ全体の状態を 1 つのスナップショットファイルとして出力できます。これには KV のデータ、ポリシー、Auth Method やシークレットエンジンの設定などが全て含まれます。取得は<code>vault operator raft snapshot save</code>コマンド一つで完了します。</p>
+<div class="codeblock"><div class="codebar"><span class="lang">console</span><button type="button" class="copy" data-copy="export VAULT_ADDR=&quot;http://127.0.0.1:8200&quot;
+vault operator raft snapshot save vault-$(date +%Y%m%d).snap
+ls -lh vault-*.snap" aria-label="コマンドのみコピー">コマンドのみコピー</button></div><pre><code><span class="ps" aria-hidden="true">$ </span>export VAULT_ADDR=&quot;http://127.0.0.1:8200&quot;
+<span class="ps" aria-hidden="true">$ </span>vault operator raft snapshot save vault-$(date +%Y%m%d).snap
+
+<span class="ps" aria-hidden="true">$ </span>ls -lh vault-*.snap
+<span class="out">-rw-------. 1 ec2-user ec2-user 447K Oct  7 18:15 vault-20261007.snap</span></code></pre></div>
+<p>スナップショットの取得にはクラスタ全体を読み出す権限が必要なため、専用のポリシーを用意してトークンを割り当てるのが一般的です。</p>
+<div class="codeblock"><div class="codebar"><span class="lang">hcl</span><button type="button" class="copy" data-copy="path &quot;sys/storage/raft/snapshot&quot; {
+  capabilities = [&quot;read&quot;]
+}" aria-label="コピー">コピー</button></div><pre><code>path &quot;sys/storage/raft/snapshot&quot; {
+  capabilities = [&quot;read&quot;]
+}</code></pre></div>
+<p>本番では、このコマンドを cron や自動化ツールで定期実行し、取得したスナップショットを S3 などのオブジェクトストレージに保管します。スナップショット自体は Vault のマスターキーで暗号化された状態ではないため、保管先のアクセス制御と暗号化を必ず行ってください。</p>
+<blockquote>
+<p>Vault Enterprise / HCP Vault では、スナップショットを指定したスケジュールで自動取得し、S3 や GCS へ自動保管する <strong>Automated Snapshots</strong> が利用できます。手動運用に比べて取り逃しのリスクを下げられます。</p>
+</blockquote>
+<h3 id="リストア-スナップショットからの復元">リストア (スナップショットからの復元)<a class="anchor" href="#リストア-スナップショットからの復元" aria-label="このセクションへのリンク">#</a></h3>
+<p>取得したスナップショットから復元するには<code>vault operator raft snapshot restore</code>を使います。復元は現在のクラスタのデータを上書きするため、実行には細心の注意が必要です。</p>
+<div class="codeblock"><div class="codebar"><span class="lang">console</span><button type="button" class="copy" data-copy="vault operator raft snapshot restore vault-20261007.snap" aria-label="コマンドのみコピー">コマンドのみコピー</button></div><pre><code><span class="ps" aria-hidden="true">$ </span>vault operator raft snapshot restore vault-20261007.snap</code></pre></div>
+<blockquote>
+<p><strong>注意:</strong> リストアは現在の Vault のデータを丸ごと置き換える破壊的な操作です。誤って本番クラスタに別環境のスナップショットを流し込むと取り返しがつきません。必ず対象のクラスタと、スナップショットの取得元・取得時刻を確認してから実行してください。可能であれば、まず検証用クラスタで復元の手順と内容を確認することをお勧めします。</p>
+</blockquote>
+<p>復元後、Auto Unseal を使っている場合は自動的に unseal されますが、Shamir の鍵を使っている場合はスナップショット取得時点の<code>Unseal Key</code>で改めて unseal する必要があります。復元が完了したら、代表的なシークレットを読み出せるか、ポリシーや Auth Method が意図通りに残っているかを確認します。</p>
+<div class="codeblock"><div class="codebar"><span class="lang">console</span><button type="button" class="copy" data-copy="vault status
+vault kv get kv/iam" aria-label="コマンドのみコピー">コマンドのみコピー</button></div><pre><code><span class="ps" aria-hidden="true">$ </span>vault status
+<span class="out">Key             Value</span>
+<span class="out">---             -----</span>
+<span class="out">Sealed          false</span>
+<span class="out">...</span>
+
+<span class="ps" aria-hidden="true">$ </span>vault kv get kv/iam
+<span class="out">== Secret Path ==</span>
+<span class="out">kv/data/iam</span>
+
+<span class="out">======= Metadata =======</span>
+<span class="out">Key                Value</span>
+<span class="out">---                -----</span>
+<span class="out">created_time       2026-10-07T17:59:28.404613142Z</span>
+<span class="out">custom_metadata    &lt;nil&gt;</span>
+<span class="out">deletion_time      n/a</span>
+<span class="out">destroyed          false</span>
+<span class="out">version            3</span>
+
+<span class="out">====== Data ======</span>
+<span class="out">Key         Value</span>
+<span class="out">---         -----</span>
+<span class="out">name        kabu-2</span>
+<span class="out">password    passwd-2</span></code></pre></div>
+<p>取得時点のデータが復元されていることが確認できれば完了です。バックアップは「取得できること」だけでなく「正しくリストアできること」までを定期的に検証して初めて意味を持ちます。半期に一度など、リストアのリハーサルを運用手順に組み込んでおきましょう。</p>
+<h3 id="参考リンク-7">参考リンク<a class="anchor" href="#参考リンク-7" aria-label="このセクションへのリンク">#</a></h3>
+<ul>
+<li><a href="https://developer.hashicorp.com/vault/docs/commands/operator/raft" target="_blank" rel="noopener noreferrer">vault operator raft snapshot</a></li>
+<li><a href="https://developer.hashicorp.com/vault/docs/concepts/integrated-storage" target="_blank" rel="noopener noreferrer">Integrated Storage</a></li>
+<li><a href="https://developer.hashicorp.com/vault/docs/enterprise/automated-integrated-storage-snapshots" target="_blank" rel="noopener noreferrer">Automated Integrated Storage Snapshots</a></li>
+</ul>
+<hr>
+<h2 id="クリーンアップ-削除手順">クリーンアップ (削除手順)<a class="anchor" href="#クリーンアップ-削除手順" aria-label="このセクションへのリンク">#</a></h2>
+<p>ハンズオンで作成したリソースを削除します。課金や権限の残存を避けるため、不要になったら必ず後片付けをしてください。</p>
+<p><strong>Vault 本体の中の設定 (シークレットエンジン・認証メソッド・ポリシー・Sentinel・Secret Sync など) は、個別に消す必要はありません。</strong> 本ハンズオンの Vault は専用の EC2 インスタンス上で動いており、最後にインスタンスごと破棄するため、Vault 内部の後片付けは不要です。残るのは <strong>AWS 側に作られたリソース</strong> と <strong>EC2 インスタンス本体</strong> です。</p>
+<h3 id="aws-側の後片付け">AWS 側の後片付け<a class="anchor" href="#aws-側の後片付け" aria-label="このセクションへのリンク">#</a></h3>
+<h4 id="1-作成したサブネットを削除する">1. 作成したサブネットを削除する<a class="anchor" href="#1-作成したサブネットを削除する" aria-label="このセクションへのリンク">#</a></h4>
+<p><a href="#terraform-連携">Terraform 連携</a> で <code>handson-assume-role</code> に <code>ec2:DeleteSubnet</code> を含めているため、Terraform で作成したサブネットは <strong>同じ Vault 動的クレデンシャルで <code>terraform destroy</code></strong> できます。</p>
+<div class="codeblock"><div class="codebar"><span class="lang">console</span><button type="button" class="copy" data-copy="export VAULT_ADDR=&quot;http://127.0.0.1:8200&quot;
+export VAULT_TOKEN=$(vault print token)
+cd /path/to/tf-subnet
+terraform destroy -auto-approve" aria-label="コマンドのみコピー">コマンドのみコピー</button></div><pre><code><span class="ps" aria-hidden="true">$ </span>export VAULT_ADDR=&quot;http://127.0.0.1:8200&quot;
+<span class="ps" aria-hidden="true">$ </span>export VAULT_TOKEN=$(vault print token)
+<span class="ps" aria-hidden="true">$ </span>cd /path/to/tf-subnet
+<span class="ps" aria-hidden="true">$ </span>terraform destroy -auto-approve</code></pre></div>
+<p>手動の <code>aws ec2 create-subnet</code> で作成したサブネットが残っている場合は、個別に削除します。発行した Vault クレデンシャル (または削除権限を持つプロファイル) で実行してください。</p>
+<div class="codeblock"><div class="codebar"><span class="lang">console</span><button type="button" class="copy" data-copy="aws ec2 delete-subnet --subnet-id &lt;SUBNET_ID&gt; --region ap-northeast-1" aria-label="コマンドのみコピー">コマンドのみコピー</button></div><pre><code><span class="ps" aria-hidden="true">$ </span>aws ec2 delete-subnet --subnet-id &lt;SUBNET_ID&gt; --region ap-northeast-1</code></pre></div>
+<h4 id="2-iam-ロールとインラインポリシーを削除する">2. IAM ロールとインラインポリシーを削除する<a class="anchor" href="#2-iam-ロールとインラインポリシーを削除する" aria-label="このセクションへのリンク">#</a></h4>
+<p>手動のマネジメントコンソールでも削除できるよう、<strong>削除対象の名前を明示</strong> します。以下の名前のものを探して削除してください (IAM 変更権限を持つプロファイルで実行)。</p>
+<p><strong>削除するロール:</strong></p>
+<ul>
+<li><strong><code>handson-assume-role</code></strong> — <a href="#vault-への-aws-権限付与">Vault への AWS 権限付与</a> で作成した AssumeRole 先の対象ロール。<strong>まるごと削除します。</strong></li>
+</ul>
+<p><strong><code>handson-assume-role</code> に紐づくインラインポリシー:</strong></p>
+<ul>
+<li><strong><code>handson-assume-permissions</code></strong> — サブネット作成/削除などの許可ポリシー (ロールを削除すれば一緒に消えます)</li>
+</ul>
+<p><strong><code>HandsonRole</code> (EC2 のインスタンスロール) に追加したインラインポリシー 3 つ:</strong></p>
+<ul>
+<li><strong><code>VaultAwsEc2Auth</code></strong> — AWS Auth (ec2 method) 用 (<code>ec2:DescribeInstances</code> ほか)</li>
+<li><strong><code>VaultAssumeSubnetRole</code></strong> — <code>handson-assume-role</code> を AssumeRole するための許可</li>
+<li><strong><code>VaultSecretSync</code></strong> — Secret Sync の Secrets Manager 操作用</li>
+</ul>
+<blockquote>
+<p><strong><code>HandsonRole</code> 本体は削除しないでください。</strong> これは EC2 のコンソールアクセス (SSM) に使っているロールです。ハンズオンで追加した上記 3 つのインラインポリシーだけを外します。</p>
+</blockquote>
+<p>CLI で削除する場合は以下のとおりです (<code>&lt;...&gt;</code> の名前は上記のものです)。</p>
+<div class="codeblock"><div class="codebar"><span class="lang">console</span><button type="button" class="copy" data-copy="aws iam delete-role-policy --role-name handson-assume-role --policy-name handson-assume-permissions
+aws iam delete-role --role-name handson-assume-role
+aws iam delete-role-policy --role-name HandsonRole --policy-name VaultAwsEc2Auth
+aws iam delete-role-policy --role-name HandsonRole --policy-name VaultAssumeSubnetRole
+aws iam delete-role-policy --role-name HandsonRole --policy-name VaultSecretSync" aria-label="コマンドのみコピー">コマンドのみコピー</button></div><pre><code><span class="out"># handson-assume-role: インラインポリシーを外してからロールを削除</span>
+<span class="ps" aria-hidden="true">$ </span>aws iam delete-role-policy --role-name handson-assume-role --policy-name handson-assume-permissions
+<span class="ps" aria-hidden="true">$ </span>aws iam delete-role --role-name handson-assume-role
+
+<span class="out"># HandsonRole に追加した 3 つのインラインポリシーを外す (ロール自体は残す)</span>
+<span class="ps" aria-hidden="true">$ </span>aws iam delete-role-policy --role-name HandsonRole --policy-name VaultAwsEc2Auth
+<span class="ps" aria-hidden="true">$ </span>aws iam delete-role-policy --role-name HandsonRole --policy-name VaultAssumeSubnetRole
+<span class="ps" aria-hidden="true">$ </span>aws iam delete-role-policy --role-name HandsonRole --policy-name VaultSecretSync</code></pre></div>
+<blockquote>
+<p>Secret Sync を試した場合は、AWS Secrets Manager 側に <code>vault/...</code> という名前のシークレットが作成されています。不要であれば <code>aws secretsmanager delete-secret</code> で合わせて削除してください。</p>
+</blockquote>
+<h3 id="ec2-インスタンスの削除">EC2 インスタンスの削除<a class="anchor" href="#ec2-インスタンスの削除" aria-label="このセクションへのリンク">#</a></h3>
+<p>最後に、Vault が動いていた <strong>EC2 インスタンスを終了 (terminate)</strong> します。これにより Vault 本体・設定・データ・スナップショット・鍵ファイルを含め、インスタンス内のものはすべて消えます。インスタンスプロファイルの関連付けも自動的に解除されます。</p>
+<div class="codeblock"><div class="codebar"><span class="lang">console</span><button type="button" class="copy" data-copy="aws ec2 terminate-instances --instance-ids &lt;INSTANCE_ID&gt; --region ap-northeast-1" aria-label="コマンドのみコピー">コマンドのみコピー</button></div><pre><code><span class="ps" aria-hidden="true">$ </span>aws ec2 terminate-instances --instance-ids &lt;INSTANCE_ID&gt; --region ap-northeast-1</code></pre></div>
+<blockquote>
+<p>Vault の <code>init</code> 時に生成した Unseal Key / Root Token を、スクリーンショットや別ファイルなどインスタンス外に控えている場合は、それらも忘れずに破棄してください。</p>
+</blockquote>
+
+</main>
+<aside class="agenda">
+<nav aria-label="アジェンダ">
+<h2>Agenda</h2>
+<ol>
+<li><a href="#vault-セットアップ" data-target="vault-セットアップ"><span class="num">1</span><span>Vault セットアップ</span></a></li>
+<li><a href="#vault-への-aws-権限付与" data-target="vault-への-aws-権限付与"><span class="num">2</span><span>Vault への AWS 権限付与</span></a></li>
+<li><a href="#アプリからの利用-auth-method" data-target="アプリからの利用-auth-method"><span class="num">3</span><span>アプリからの利用 (Auth Method)</span></a></li>
+<li><a href="#static-secret-engine" data-target="static-secret-engine"><span class="num">4</span><span>Static Secret Engine</span></a></li>
+<li><a href="#aws-secret-engine" data-target="aws-secret-engine"><span class="num">5</span><span>AWS Secret Engine</span></a></li>
+<li><a href="#テナントと権限設計" data-target="テナントと権限設計"><span class="num">6</span><span>テナントと権限設計</span></a></li>
+<li><a href="#terraform-連携" data-target="terraform-連携"><span class="num">7</span><span>Terraform 連携</span></a></li>
+<li><a href="#day2-運用" data-target="day2-運用"><span class="num">8</span><span>Day2 運用</span></a></li>
+<li><a href="#クリーンアップ-削除手順" data-target="クリーンアップ-削除手順"><span class="num">9</span><span>クリーンアップ (削除手順)</span></a></li>
+</ol>
+</nav>
+</aside>
+</div>
+<div id="status" class="sr-only" role="status" aria-live="polite"></div>
+<script>
+(() => {
+  // ---- コピーボタン ----
+  const status = document.getElementById('status');
+  async function writeClipboard(text) {
+    if (navigator.clipboard && window.isSecureContext) {
+      try { await navigator.clipboard.writeText(text); return; } catch (_) { /* フォールバックへ */ }
+    }
+    const ta = document.createElement('textarea');
+    ta.value = text; ta.setAttribute('readonly', '');
+    ta.style.position = 'fixed'; ta.style.opacity = '0';
+    document.body.appendChild(ta); ta.select();
+    const ok = document.execCommand('copy');
+    ta.remove();
+    if (!ok) throw new Error('copy failed');
+  }
+  document.addEventListener('click', async (e) => {
+    const btn = e.target.closest('button.copy');
+    if (!btn) return;
+    const label = btn.getAttribute('aria-label');
+    try {
+      await writeClipboard(btn.dataset.copy);
+      btn.textContent = 'コピーしました'; btn.classList.add('done');
+      status.textContent = 'クリップボードにコピーしました';
+    } catch (_) {
+      btn.textContent = 'コピー失敗'; status.textContent = 'コピーに失敗しました';
+    }
+    setTimeout(() => { btn.textContent = label; btn.classList.remove('done'); }, 1600);
+  });
+
+  // ---- アジェンダのハイライト (スクロール位置に追従) ----
+  const links = [...document.querySelectorAll('.agenda a')];
+  const heads = links.map((a) => document.getElementById(a.dataset.target)).filter(Boolean);
+  let ticking = false;
+  function update() {
+    ticking = false;
+    let cur = null;
+    for (const h of heads) { if (h.getBoundingClientRect().top <= 120) cur = h.id; else break; }
+    links.forEach((a) => {
+      const on = a.dataset.target === cur;
+      a.classList.toggle('active', on);
+      if (on) a.setAttribute('aria-current', 'location'); else a.removeAttribute('aria-current');
+    });
+    const active = document.querySelector('.agenda a.active');
+    if (active) {
+      // ページ全体を動かさず、アジェンダ内だけで見える位置に寄せる
+      const box = active.closest('aside');
+      const a = active.getBoundingClientRect(), b = box.getBoundingClientRect();
+      if (a.top < b.top) box.scrollTop -= b.top - a.top;
+      else if (a.bottom > b.bottom) box.scrollTop += a.bottom - b.bottom;
+    }
+  }
+  addEventListener('scroll', () => { if (!ticking) { ticking = true; requestAnimationFrame(update); } }, { passive: true });
+  addEventListener('resize', update);
+  update();
+})();
+</script>
+</body>
+</html>

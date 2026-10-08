@@ -738,7 +738,7 @@ token_renewable                true
 token_policies                 ["default" "ec2-demo"]
 identity_policies              []
 policies                       ["default" "ec2-demo"]
-token_meta_account_id          730335563172
+token_meta_account_id          123456789012
 token_meta_auth_type           ec2
 token_meta_role                ec2-role
 token_meta_role_tag_max_ttl    0s
@@ -1183,7 +1183,7 @@ lease_id           aws/creds/subnet-role/XPtUG66uD5wgdTY4MOxHZ6Pt
 lease_duration     14m59s
 lease_renewable    false
 access_key         ASIA2UC3EJWSF43YTZU2
-arn                arn:aws:sts::730335563172:assumed-role/handson-assume-role/vault-root-subnet-role-1791393377-uE1dJZxsiK7bLyDyyuOo
+arn                arn:aws:sts::123456789012:assumed-role/handson-assume-role/vault-root-subnet-role-1791393377-uE1dJZxsiK7bLyDyyuOo
 secret_key         5ruahqxcBQzW/LCt7H2jRaBUcvpt8NpkxIt2TN42
 security_token     IQoJb3JpZ2luX2VjE...(省略)...
 session_token      IQoJb3JpZ2luX2VjE...(省略)...
@@ -1238,7 +1238,7 @@ Key                Value
 lease_id           aws/creds/subnet-role-short/OWLnwcl0F9onQQ1ER1C3Q3Lk
 lease_duration     14m59s
 access_key         ASIA2UC3EJWS...
-arn                arn:aws:sts::730335563172:assumed-role/handson-assume-role/vault-root-subnet-role-short-...
+arn                arn:aws:sts::123456789012:assumed-role/handson-assume-role/vault-root-subnet-role-short-...
 ...
 ```
 
