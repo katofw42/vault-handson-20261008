@@ -1584,9 +1584,11 @@ token_policies         ["default"]
 ...
 ```
 
-同じユーザ・同じ認証情報でも、接続元 IP が許可範囲外ならログイン自体が成立しません。ACL では表現できない「どこからアクセスしているか」という条件を、Sentinel なら認証の段階で強制できます。確認が済んだらポリシーを削除しておきます。
+同じユーザ・同じ認証情報でも、接続元 IP が許可範囲外ならログイン自体が成立しません。ACL では表現できない「どこからアクセスしているか」という条件を、Sentinel なら認証の段階で強制できます。確認が済んだらポリシーを削除しておきます。なお、`userpass` でのログインに成功すると、token helper に保存されているトークンが root から `alice` のものに置き換わります。`alice` のトークンにはポリシーを削除する権限がないため、削除の前に **root で再ログイン** します (`vault-keys.txt` は [Vault の初期化処理](#vault-の初期化処理-init--unseal) で保存したファイルです)。
 
 ```console
+$ vault login $(grep 'Initial Root Token' vault-keys.txt | awk '{print $4}')
+
 $ vault delete sys/policies/egp/userpass-cidr
 Success! Data deleted (if it existed) at: sys/policies/egp/userpass-cidr
 ```
